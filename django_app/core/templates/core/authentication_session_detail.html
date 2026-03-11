@@ -6,6 +6,13 @@
 <section class="panel">
     <h2>Authentication Session {{ session.id }}</h2>
     <p class="muted">Current status for a single authentication attempt.</p>
+    <div class="actions">
+        <a class="button secondary" href="{% url 'core:resource-detail' session.resource.id %}">View Resource</a>
+        {% if session.policy %}
+            <a class="button secondary" href="{% url 'core:policy-detail' session.policy.id %}">View Policy</a>
+        {% endif %}
+        <a class="button secondary" href="{% url 'core:audit-log' %}">Open Audit Log</a>
+    </div>
 </section>
 
 <section class="panel">
@@ -20,8 +27,18 @@
                 <td>{{ session.user.username|default:"Unknown" }}</td>
             </tr>
             <tr>
+                <th>Policy</th>
+                <td>
+                    {% if session.policy %}
+                        <a href="{% url 'core:policy-detail' session.policy.id %}">{{ session.policy.name }}</a>
+                    {% else %}
+                        Default single-factor policy
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
                 <th>Status</th>
-                <td><span class="status">{{ session.get_status_display }}</span></td>
+                <td><span class="status {% if session.is_access_granted %}approved{% elif session.is_complete %}denied{% endif %}">{{ session.get_status_display }}</span></td>
             </tr>
             <tr>
                 <th>Decision</th>
@@ -30,6 +47,10 @@
             <tr>
                 <th>Progress</th>
                 <td>{{ session.accepted_factor_count }} of {{ session.required_factor_count }} accepted factors</td>
+            </tr>
+            <tr>
+                <th>Remaining</th>
+                <td>{{ session.remaining_factor_count }} factor{{ session.remaining_factor_count|pluralize }}</td>
             </tr>
             <tr>
                 <th>Started</th>

@@ -76,7 +76,8 @@ class Credential(models.Model):
         unique_together = ("user", "credential_type", "identifier")
 
     def __str__(self):
-        return self.label or f"{self.user} - {self.credential_type}"
+        name = self.label or self.identifier
+        return f"{self.user} - {self.get_credential_type_display()} - {name}"
 
 
 class AuthenticationSession(models.Model):
@@ -130,7 +131,7 @@ class AuthenticationSession(models.Model):
         ordering = ["-started_at"]
 
     def __str__(self):
-        return f"Session {self.pk} for {self.resource.name}"
+        return f"Session {self.pk} - {self.resource.name} - {self.get_status_display()}"
 
     def clean(self):
         errors = {}
@@ -175,6 +176,18 @@ class AuthenticationSession(models.Model):
     def submitted_factors(self):
         return self._detail_list("submitted_factors")
 
+    @property
+    def remaining_factor_count(self):
+        return max(self.required_factor_count - self.accepted_factor_count, 0)
+
+    @property
+    def is_complete(self):
+        return self.status in {self.Status.APPROVED, self.Status.DENIED}
+
+    @property
+    def is_access_granted(self):
+        return self.decision == self.Decision.GRANTED
+
 
 class AuditEvent(models.Model):
     class Severity(models.TextChoices):
@@ -210,4 +223,4 @@ class AuditEvent(models.Model):
         ordering = ["-timestamp"]
 
     def __str__(self):
-        return f"{self.event_type} ({self.severity})"
+        return f"{self.get_severity_display()} - {self.event_type}"

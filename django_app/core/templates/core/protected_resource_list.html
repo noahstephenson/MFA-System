@@ -22,7 +22,7 @@
             <tbody>
                 {% for resource in resources %}
                     <tr>
-                        <td>{{ resource.name }}</td>
+                        <td><a href="{% url 'core:resource-detail' resource.id %}">{{ resource.name }}</a></td>
                         <td>{{ resource.description|default:"No description." }}</td>
                         <td>{{ resource.active|yesno:"Yes,No" }}</td>
                         <td>
@@ -30,7 +30,7 @@
                                 <ul>
                                     {% for policy in resource.active_policies %}
                                         <li>
-                                            {{ policy.name }}:
+                                            <a href="{% url 'core:policy-detail' policy.id %}">{{ policy.name }}</a>:
                                             {{ policy.required_factor_count }} factor{{ policy.required_factor_count|pluralize }}
                                         </li>
                                     {% endfor %}

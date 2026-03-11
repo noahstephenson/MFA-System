@@ -1,0 +1,115 @@
+{% extends "core/base.html" %}
+
+{% block title %}Access Result {{ session.id }} | MFA System{% endblock title %}
+
+{% block content %}
+<section class="panel">
+    <div class="eyebrow">Decision</div>
+    <h2>Access Attempt Result</h2>
+    <div class="result-banner {% if session.is_access_granted %}granted{% else %}denied{% endif %}">
+        {% if session.is_access_granted %}
+            Access granted for {{ session.user.username|default:"the selected user" }}.
+        {% else %}
+            Access denied for {{ session.user.username|default:"the selected user" }}.
+        {% endif %}
+    </div>
+    <div class="callout {{ session_state_tone }}">
+        <h3>{{ session_state_title }}</h3>
+        <p class="muted">{{ session_state_message }}</p>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Decision Summary</h2>
+    <table>
+        <tbody>
+            <tr>
+                <th>Access Attempt</th>
+                <td>{{ session.id }}</td>
+            </tr>
+            <tr>
+                <th>User</th>
+                <td>{{ session.user.username|default:"Unknown" }}</td>
+            </tr>
+            <tr>
+                <th>Requested Resource</th>
+                <td>{{ session.resource.name }}</td>
+            </tr>
+            <tr>
+                <th>Applied Policy</th>
+                <td>
+                    {% if session.policy %}
+                        {{ session.policy.name }} ({{ session.policy.get_tier_display }}, {{ session.required_factor_count }} factors)
+                    {% else %}
+                        Default single-factor policy
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <th>Status</th>
+                <td><span class="status {% if session.is_access_granted %}approved{% else %}denied{% endif %}">{{ session.get_status_display }}</span></td>
+            </tr>
+            <tr>
+                <th>Decision</th>
+                <td>{{ session.get_decision_display }}</td>
+            </tr>
+            <tr>
+                <th>Latest Audit Event</th>
+                <td>
+                    {% if latest_session_event %}
+                        {{ latest_session_event.event_type }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <th>Progress</th>
+                <td>{{ session.accepted_factor_count }} of {{ session.required_factor_count }} required factors accepted</td>
+            </tr>
+            <tr>
+                <th>Completed</th>
+                <td>{{ session.completed_at }}</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <h2>Credential Attempts</h2>
+    {% if session.submitted_factors %}
+        <ul>
+            {% for factor in session.submitted_factors %}
+                <li>
+                    Attempt {{ forloop.counter }}: {{ factor.credential_type }} / {{ factor.identifier }} -
+                    {% if factor.matched %}accepted{% else %}rejected{% endif %}
+                    {% if factor.duplicate %}(duplicate){% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No factors were submitted.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2>Attempt Timeline</h2>
+    {% if session_audit_events %}
+        <ul>
+            {% for event in session_audit_events %}
+                <li>{{ event.timestamp }} - {{ event.event_type }} - {{ event.message }}</li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No audit events recorded for this session.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <div class="actions">
+        <a class="button" href="{% url 'core:simulation-start' %}">Start Another Attempt</a>
+        <a class="button secondary" href="{% url 'core:session-detail' session.id %}">Open Backend Session View</a>
+        <a class="button secondary" href="{% url 'core:resource-detail' session.resource.id %}">Open Resource Details</a>
+    </div>
+</section>
+{% endblock content %}

@@ -1,0 +1,131 @@
+{% extends "core/base.html" %}
+
+{% block title %}Access Attempt {{ session.id }} | MFA System{% endblock title %}
+
+{% block content %}
+<section class="panel">
+    <div class="eyebrow">Live Attempt</div>
+    <h2>Access Attempt {{ session.id }}</h2>
+    <p class="muted">Present credentials one at a time until the policy is satisfied or the attempt is ended as denied.</p>
+    <div class="actions">
+        <a class="button secondary" href="{% url 'core:session-detail' session.id %}">View Backend Session Page</a>
+        <a class="button secondary" href="{% url 'core:resource-detail' session.resource.id %}">View Resource Details</a>
+    </div>
+    <div class="callout {{ session_state_tone }}">
+        <h3>{{ session_state_title }}</h3>
+        <p class="muted">{{ session_state_message }}</p>
+    </div>
+</section>
+
+<section class="panel">
+    <table>
+        <tbody>
+            <tr>
+                <th>User</th>
+                <td>{{ session.user.username|default:"Unknown" }}</td>
+            </tr>
+            <tr>
+                <th>Resource</th>
+                <td>{{ session.resource.name }}</td>
+            </tr>
+            <tr>
+                <th>Policy</th>
+                <td>
+                    {% if session.policy %}
+                        {{ session.policy.name }} ({{ session.policy.get_tier_display }}, {{ session.required_factor_count }} factors)
+                    {% else %}
+                        Default single-factor policy
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <th>Status</th>
+                <td><span class="status in-progress">{{ session.get_status_display }}</span></td>
+            </tr>
+            <tr>
+                <th>Progress</th>
+                <td>{{ session.accepted_factor_count }} of {{ session.required_factor_count }} required factors accepted</td>
+            </tr>
+            <tr>
+                <th>Remaining</th>
+                <td>{{ session.remaining_factor_count }} factor{{ session.remaining_factor_count|pluralize }}</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <h2>Present Factor {{ next_factor_number }} of {{ session.required_factor_count }}</h2>
+    <form method="post">
+        {% csrf_token %}
+        {{ factor_form.non_field_errors }}
+        <div class="form-grid">
+            {% for field in factor_form %}
+                <div class="form-field">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}
+                        <span class="helptext">{{ field.help_text }}</span>
+                    {% endif %}
+                    {{ field.errors }}
+                </div>
+            {% endfor %}
+        </div>
+        <div class="actions" style="margin-top: 1rem;">
+            <button type="submit">Submit Presented Factor</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
+    <h2>Credential Attempts</h2>
+    {% if session.submitted_factors %}
+        <ul>
+            {% for factor in session.submitted_factors %}
+                <li>
+                    Attempt {{ forloop.counter }}: {{ factor.credential_type }} / {{ factor.identifier }} -
+                    {% if factor.matched %}accepted{% else %}rejected{% endif %}
+                    {% if factor.duplicate %}(duplicate){% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No factors submitted yet.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2>Registered Demo Credentials</h2>
+    <p class="muted">These active credentials belong to the selected user and can be used for the demo.</p>
+    {% if available_credentials %}
+        <ul>
+            {% for credential in available_credentials %}
+                <li>{{ credential.get_credential_type_display }} - {{ credential.identifier }}{% if credential.label %} ({{ credential.label }}){% endif %}</li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No active credentials found for this user.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2>Attempt Timeline</h2>
+    {% if session_audit_events %}
+        <ul>
+            {% for event in session_audit_events %}
+                <li>{{ event.timestamp }} - {{ event.event_type }} - {{ event.message }}</li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No audit events recorded yet.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2>End Attempt</h2>
+    <form method="post">
+        {% csrf_token %}
+        <button class="warning" type="submit" name="deny_session" value="1">End Attempt as Denied</button>
+    </form>
+</section>
+{% endblock content %}

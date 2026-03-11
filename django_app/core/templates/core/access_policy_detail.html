@@ -1,0 +1,62 @@
+{% extends "core/base.html" %}
+
+{% block title %}Policy {{ policy.name }} | MFA System{% endblock title %}
+
+{% block content %}
+<section class="panel">
+    <h2>Access Policy</h2>
+    <p class="muted">Read-only backend view for a single policy.</p>
+    <div class="actions">
+        <a class="button secondary" href="{% url 'core:policy-list' %}">Back to Policies</a>
+        <a class="button secondary" href="{% url 'admin:core_accesspolicy_changelist' %}">Open in Admin</a>
+    </div>
+</section>
+
+<section class="panel">
+    <table>
+        <tbody>
+            <tr>
+                <th>Name</th>
+                <td>{{ policy.name }}</td>
+            </tr>
+            <tr>
+                <th>Resource</th>
+                <td><a href="{% url 'core:resource-detail' policy.resource.id %}">{{ policy.resource.name }}</a></td>
+            </tr>
+            <tr>
+                <th>Description</th>
+                <td>{{ policy.description|default:"No description." }}</td>
+            </tr>
+            <tr>
+                <th>Tier</th>
+                <td>{{ policy.get_tier_display }}</td>
+            </tr>
+            <tr>
+                <th>Required Factors</th>
+                <td>{{ policy.required_factor_count }}</td>
+            </tr>
+            <tr>
+                <th>Active</th>
+                <td>{{ policy.active|yesno:"Yes,No" }}</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <h2>Recent Sessions Using This Policy</h2>
+    {% if recent_sessions %}
+        <ul>
+            {% for session in recent_sessions %}
+                <li>
+                    <a href="{% url 'core:session-detail' session.id %}">Session {{ session.id }}</a> -
+                    {{ session.user.username|default:"Unknown" }} -
+                    {{ session.get_status_display }}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No sessions have used this policy yet.</p>
+    {% endif %}
+</section>
+{% endblock content %}

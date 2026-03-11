@@ -1,0 +1,39 @@
+{% extends "core/base.html" %}
+
+{% block title %}Policies | MFA System{% endblock title %}
+
+{% block content %}
+<section class="panel">
+    <h2>Access Policies</h2>
+    <p class="muted">Read-only backend view for access policy inspection.</p>
+</section>
+
+<section class="panel">
+    {% if policies %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Resource</th>
+                    <th>Tier</th>
+                    <th>Required Factors</th>
+                    <th>Active</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for policy in policies %}
+                    <tr>
+                        <td><a href="{% url 'core:policy-detail' policy.id %}">{{ policy.name }}</a></td>
+                        <td><a href="{% url 'core:resource-detail' policy.resource.id %}">{{ policy.resource.name }}</a></td>
+                        <td>{{ policy.get_tier_display }}</td>
+                        <td>{{ policy.required_factor_count }}</td>
+                        <td>{{ policy.active|yesno:"Yes,No" }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No access policies have been created yet.</p>
+    {% endif %}
+</section>
+{% endblock content %}

@@ -1,0 +1,93 @@
+{% extends "core/base.html" %}
+
+{% block title %}Start Access Attempt | MFA System{% endblock title %}
+
+{% block content %}
+<section class="panel">
+    <div class="eyebrow">Simulation</div>
+    <h2>Start an Access Attempt</h2>
+    <p class="muted">
+        Choose who is requesting access and which protected resource they want to open.
+        The system will apply the resource's configured backend policy automatically.
+    </p>
+    <div class="callout info">
+        <h3>How this demo works</h3>
+        <p class="muted">
+            The simulation does not let the user choose a tier directly. The requested resource determines
+            the policy, factor count, and tier shown on the next step.
+        </p>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Access Request</h2>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div class="form-grid">
+            {% for field in form %}
+                <div class="form-field">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}
+                        <span class="helptext">{{ field.help_text }}</span>
+                    {% endif %}
+                    {{ field.errors }}
+                </div>
+            {% endfor %}
+        </div>
+        <div class="actions" style="margin-top: 1rem;">
+            <button type="submit">Start Access Attempt</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
+    <h2>Configured Resource Policies</h2>
+    <p class="muted">This preview shows the policy the backend will apply for each active resource.</p>
+    {% if simulation_resources %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Resource</th>
+                    <th>Applied Policy</th>
+                    <th>Tier</th>
+                    <th>Required Factors</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for resource in simulation_resources %}
+                    {% with applied_policy=resource.simulation_policies.0 %}
+                        <tr>
+                            <td>{{ resource.name }}</td>
+                            <td>
+                                {% if applied_policy %}
+                                    {{ applied_policy.name }}
+                                {% else %}
+                                    Default single-factor fallback
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if applied_policy %}
+                                    {{ applied_policy.get_tier_display }}
+                                {% else %}
+                                    Basic
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if applied_policy %}
+                                    {{ applied_policy.required_factor_count }}
+                                {% else %}
+                                    1
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endwith %}
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No active resources are available for simulation.</p>
+    {% endif %}
+</section>
+{% endblock content %}

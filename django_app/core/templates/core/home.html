@@ -4,15 +4,52 @@
 
 {% block content %}
 <section class="panel">
-    <h2>System Status</h2>
-    <p class="muted">This is the local Django backend for the MFA prototype.</p>
-    <p class="muted">Use the admin to manage resources, policies, credentials, sessions, and audit events.</p>
+    <div class="eyebrow">Overview</div>
+    <h2>MFA Prototype Dashboard</h2>
+    <p class="muted">This Django app demonstrates one backend exposed through a simulation flow, read-only operator pages, and a small JSON API.</p>
+    <p class="muted">
+        Use the simulation to walk through an access attempt, the backend pages to inspect configured data and session history, and the admin/API for deeper management or integration testing.
+    </p>
+    <div class="actions">
+        <a class="button" href="{% url 'core:simulation-start' %}">Run Access Attempt</a>
+        <a class="button secondary" href="{% url 'core:resource-list' %}">Open Backend Pages</a>
+        <a class="button secondary" href="{% url 'admin:index' %}">Open Admin</a>
+    </div>
+</section>
+
+<section class="stats">
+    <div class="panel">
+        <div class="eyebrow">Simulation</div>
+        <h3>User Access Flow</h3>
+        <p class="muted">Pick a user and a protected resource, then step through the factors required by that resource's configured policy.</p>
+        <a class="button" href="{% url 'core:simulation-start' %}">Start Simulation</a>
+    </div>
+    <div class="panel">
+        <div class="eyebrow">Operator</div>
+        <h3>Backend Inspection</h3>
+        <p class="muted">Review resources, policies, credentials, sessions, and audit history in lightweight read-only pages.</p>
+        <a class="button secondary" href="{% url 'core:resource-list' %}">Open Backend Pages</a>
+    </div>
+    <div class="panel">
+        <div class="eyebrow">Integration</div>
+        <h3>JSON API</h3>
+        <p class="muted">External clients can start sessions, submit factors, and poll session state through these routes:</p>
+        <ul class="stack-list">
+            <li><code>POST /api/auth/start/</code></li>
+            <li><code>POST /api/auth/factor/</code></li>
+            <li><code>GET /api/auth/session/&lt;id&gt;/</code></li>
+        </ul>
+    </div>
 </section>
 
 <section class="stats">
     <div class="panel">
         <div>Active Resources</div>
         <div class="stat-value">{{ resource_count }}</div>
+    </div>
+    <div class="panel">
+        <div>Active Policies</div>
+        <div class="stat-value">{{ policy_count }}</div>
     </div>
     <div class="panel">
         <div>Sessions</div>
@@ -47,7 +84,7 @@
                         <td><a href="{% url 'core:session-detail' session.id %}">{{ session.id }}</a></td>
                         <td>{{ session.resource.name }}</td>
                         <td>{{ session.user.username|default:"Unknown" }}</td>
-                        <td><span class="status">{{ session.get_status_display }}</span></td>
+                        <td><span class="status {% if session.is_access_granted %}approved{% elif session.is_complete %}denied{% else %}in-progress{% endif %}">{{ session.get_status_display }}</span></td>
                         <td>{{ session.get_decision_display }}</td>
                     </tr>
                 {% endfor %}

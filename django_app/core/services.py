@@ -12,6 +12,14 @@ def get_authentication_session_queryset():
     return AuthenticationSession.objects.select_related("user", "resource", "policy")
 
 
+def get_access_policy_queryset():
+    return AccessPolicy.objects.select_related("resource")
+
+
+def get_credential_queryset():
+    return Credential.objects.select_related("user")
+
+
 def create_audit_event(
     event_type,
     message,
@@ -74,6 +82,26 @@ def _validation_error(message, field=None):
     return ValidationError({field: [message]})
 
 
+def _get_session_or_error(session_id):
+    try:
+        return get_authentication_session_queryset().get(id=session_id)
+    except AuthenticationSession.DoesNotExist as exc:
+        raise _validation_error("Authentication session not found.", field="session_id") from exc
+
+
+def _set_session_completion_state(
+    session,
+    *,
+    status,
+    decision,
+):
+    session.status = status
+    session.decision = decision
+    session.completed_at = timezone.now()
+    session.save(update_fields=["status", "decision", "completed_at", "updated_at"])
+    return session
+
+
 @transaction.atomic
 def start_authentication_session(*, resource_id, user_id=None, policy_id=None):
     try:
@@ -90,6 +118,8 @@ def start_authentication_session(*, resource_id, user_id=None, policy_id=None):
             user = User.objects.get(id=user_id)
         except User.DoesNotExist as exc:
             raise _validation_error("The selected user does not exist.", field="user_id") from exc
+        if not user.is_active:
+            raise _validation_error("The selected user is inactive.", field="user_id")
 
     policy = _get_policy_for_resource(resource, policy_id=policy_id)
 
@@ -119,15 +149,9 @@ def start_authentication_session(*, resource_id, user_id=None, policy_id=None):
 
 @transaction.atomic
 def submit_authentication_factor(*, session_id, credential_type, identifier):
-    try:
-        session = get_authentication_session_queryset().get(id=session_id)
-    except AuthenticationSession.DoesNotExist as exc:
-        raise _validation_error("Authentication session not found.", field="session_id") from exc
+    session = _get_session_or_error(session_id)
 
-    if session.status in {
-        AuthenticationSession.Status.APPROVED,
-        AuthenticationSession.Status.DENIED,
-    }:
+    if session.is_complete:
         raise _validation_error("This authentication session is already complete.", field="session_id")
 
     credentials = Credential.objects.filter(
@@ -230,16 +254,29 @@ def submit_authentication_factor(*, session_id, credential_type, identifier):
     session.current_step = len(accepted_factor_keys)
 
     if session.current_step >= session.required_factor_count:
-        session.status = AuthenticationSession.Status.APPROVED
-        session.decision = AuthenticationSession.Decision.GRANTED
-        session.completed_at = timezone.now()
+        session.save(update_fields=["user", "details", "current_step", "updated_at"])
+        session = _set_session_completion_state(
+            session,
+            status=AuthenticationSession.Status.APPROVED,
+            decision=AuthenticationSession.Decision.GRANTED,
+        )
         completion_message = "Authentication session approved."
     else:
         session.status = AuthenticationSession.Status.IN_PROGRESS
         session.decision = AuthenticationSession.Decision.PENDING
+        session.completed_at = None
+        session.save(
+            update_fields=[
+                "user",
+                "status",
+                "decision",
+                "completed_at",
+                "details",
+                "current_step",
+                "updated_at",
+            ]
+        )
         completion_message = "Factor accepted. Additional factors are still required."
-
-    session.save()
 
     create_audit_event(
         "factor_accepted",
@@ -268,8 +305,28 @@ def submit_authentication_factor(*, session_id, credential_type, identifier):
     }
 
 
+@transaction.atomic
+def deny_authentication_session(*, session_id, reason=None):
+    session = _get_session_or_error(session_id)
+
+    if session.is_complete:
+        raise _validation_error("This authentication session is already complete.", field="session_id")
+
+    session = _set_session_completion_state(
+        session,
+        status=AuthenticationSession.Status.DENIED,
+        decision=AuthenticationSession.Decision.REJECTED,
+    )
+    create_audit_event(
+        "session_denied",
+        reason or "Authentication session denied.",
+        session=session,
+        user=session.user,
+        severity=AuditEvent.Severity.WARNING,
+        details={"accepted_factor_count": session.accepted_factor_count},
+    )
+    return session
+
+
 def get_authentication_session(session_id):
-    try:
-        return get_authentication_session_queryset().get(id=session_id)
-    except AuthenticationSession.DoesNotExist as exc:
-        raise _validation_error("Authentication session not found.", field="session_id") from exc
+    return _get_session_or_error(session_id)

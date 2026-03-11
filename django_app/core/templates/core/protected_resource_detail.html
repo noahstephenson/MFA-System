@@ -1,0 +1,80 @@
+{% extends "core/base.html" %}
+
+{% block title %}Resource {{ resource.name }} | MFA System{% endblock title %}
+
+{% block content %}
+<section class="panel">
+    <h2>Protected Resource</h2>
+    <p class="muted">Read-only backend view for a single protected resource.</p>
+    <div class="actions">
+        <a class="button secondary" href="{% url 'core:resource-list' %}">Back to Resources</a>
+        <a class="button secondary" href="{% url 'admin:core_protectedresource_changelist' %}">Open in Admin</a>
+    </div>
+</section>
+
+<section class="panel">
+    <table>
+        <tbody>
+            <tr>
+                <th>Name</th>
+                <td>{{ resource.name }}</td>
+            </tr>
+            <tr>
+                <th>Description</th>
+                <td>{{ resource.description|default:"No description." }}</td>
+            </tr>
+            <tr>
+                <th>Active</th>
+                <td>{{ resource.active|yesno:"Yes,No" }}</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <h2>Policies</h2>
+    {% if policies %}
+        <ul>
+            {% for policy in policies %}
+                <li>
+                    <a href="{% url 'core:policy-detail' policy.id %}">{{ policy.name }}</a> -
+                    {{ policy.get_tier_display }}, {{ policy.required_factor_count }} factor{{ policy.required_factor_count|pluralize }}
+                    {% if not policy.active %}(inactive){% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No policies have been defined for this resource.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2>Recent Sessions</h2>
+    {% if recent_sessions %}
+        <ul>
+            {% for session in recent_sessions %}
+                <li>
+                    <a href="{% url 'core:session-detail' session.id %}">Session {{ session.id }}</a> -
+                    {{ session.user.username|default:"Unknown" }} -
+                    {{ session.get_status_display }}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No sessions recorded for this resource yet.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2>Recent Audit Events</h2>
+    {% if recent_audit_events %}
+        <ul>
+            {% for event in recent_audit_events %}
+                <li>{{ event.timestamp }} - {{ event.event_type }} - {{ event.message }}</li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No audit events recorded for this resource yet.</p>
+    {% endif %}
+</section>
+{% endblock content %}
