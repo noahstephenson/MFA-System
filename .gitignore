@@ -1,0 +1,13 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Django
+db.sqlite3
+
+# Secrets / env
+.env
+
+# Node-RED credentials
+node_red/flows_cred.json
