@@ -1,0 +1,50 @@
+{% extends "core/base.html" %}
+
+{% block title %}Resources | MFA System{% endblock title %}
+
+{% block content %}
+<section class="panel">
+    <h2>Protected Resources</h2>
+    <p class="muted">Configured resources and their active access policies.</p>
+</section>
+
+<section class="panel">
+    {% if resources %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Active</th>
+                    <th>Policies</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for resource in resources %}
+                    <tr>
+                        <td>{{ resource.name }}</td>
+                        <td>{{ resource.description|default:"No description." }}</td>
+                        <td>{{ resource.active|yesno:"Yes,No" }}</td>
+                        <td>
+                            {% if resource.active_policies %}
+                                <ul>
+                                    {% for policy in resource.active_policies %}
+                                        <li>
+                                            {{ policy.name }}:
+                                            {{ policy.required_factor_count }} factor{{ policy.required_factor_count|pluralize }}
+                                        </li>
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                                No active policies configured.
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No protected resources have been created yet.</p>
+    {% endif %}
+</section>
+{% endblock content %}

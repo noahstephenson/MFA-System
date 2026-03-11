@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{% block title %}MFA System{% endblock title %}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background: #f5f7fa;
+            color: #1f2933;
+        }
+        header {
+            background: #1f3a5f;
+            color: #ffffff;
+            padding: 1rem 1.5rem;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        nav {
+            margin-top: 0.75rem;
+        }
+        nav a {
+            color: #ffffff;
+            margin-right: 1rem;
+            text-decoration: none;
+        }
+        main {
+            padding: 1.5rem;
+        }
+        .panel {
+            background: #ffffff;
+            border: 1px solid #d9e2ec;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 1rem;
+        }
+        .stat-value {
+            font-size: 1.6rem;
+            font-weight: bold;
+            margin-top: 0.25rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.65rem;
+            border-bottom: 1px solid #d9e2ec;
+            vertical-align: top;
+        }
+        .muted {
+            color: #52606d;
+        }
+        .status {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            background: #e4ecf7;
+        }
+        ul {
+            padding-left: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>MFA System</h1>
+        <nav>
+            <a href="{% url 'core:home' %}">Home</a>
+            <a href="{% url 'core:resource-list' %}">Resources</a>
+            <a href="{% url 'core:audit-log' %}">Audit Log</a>
+            <a href="{% url 'admin:index' %}">Admin</a>
+        </nav>
+    </header>
+    <main>
+        {% block content %}{% endblock content %}
+    </main>
+</body>
+</html>

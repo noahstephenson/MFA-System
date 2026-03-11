@@ -1,0 +1,76 @@
+{% extends "core/base.html" %}
+
+{% block title %}Home | MFA System{% endblock title %}
+
+{% block content %}
+<section class="panel">
+    <h2>System Status</h2>
+    <p class="muted">This is the local Django backend for the MFA prototype.</p>
+    <p class="muted">Use the admin to manage resources, policies, credentials, sessions, and audit events.</p>
+</section>
+
+<section class="stats">
+    <div class="panel">
+        <div>Active Resources</div>
+        <div class="stat-value">{{ resource_count }}</div>
+    </div>
+    <div class="panel">
+        <div>Sessions</div>
+        <div class="stat-value">{{ session_count }}</div>
+    </div>
+    <div class="panel">
+        <div>Active Credentials</div>
+        <div class="stat-value">{{ credential_count }}</div>
+    </div>
+    <div class="panel">
+        <div>Audit Events</div>
+        <div class="stat-value">{{ audit_event_count }}</div>
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Recent Sessions</h2>
+    {% if recent_sessions %}
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Resource</th>
+                    <th>User</th>
+                    <th>Status</th>
+                    <th>Decision</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for session in recent_sessions %}
+                    <tr>
+                        <td><a href="{% url 'core:session-detail' session.id %}">{{ session.id }}</a></td>
+                        <td>{{ session.resource.name }}</td>
+                        <td>{{ session.user.username|default:"Unknown" }}</td>
+                        <td><span class="status">{{ session.get_status_display }}</span></td>
+                        <td>{{ session.get_decision_display }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No authentication sessions yet.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2>Recent Audit Events</h2>
+    {% if recent_audit_events %}
+        <ul>
+            {% for event in recent_audit_events %}
+                <li>
+                    <strong>{{ event.event_type }}</strong>:
+                    {{ event.message }}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No audit events yet.</p>
+    {% endif %}
+</section>
+{% endblock content %}

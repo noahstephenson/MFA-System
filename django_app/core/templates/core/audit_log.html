@@ -1,0 +1,47 @@
+{% extends "core/base.html" %}
+
+{% block title %}Audit Log | MFA System{% endblock title %}
+
+{% block content %}
+<section class="panel">
+    <h2>Audit Log</h2>
+    <p class="muted">Recent system audit events.</p>
+</section>
+
+<section class="panel">
+    {% if audit_events %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Type</th>
+                    <th>Severity</th>
+                    <th>User</th>
+                    <th>Session</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for event in audit_events %}
+                    <tr>
+                        <td>{{ event.timestamp }}</td>
+                        <td>{{ event.event_type }}</td>
+                        <td>{{ event.get_severity_display }}</td>
+                        <td>{{ event.user.username|default:"Unknown" }}</td>
+                        <td>
+                            {% if event.session %}
+                                <a href="{% url 'core:session-detail' event.session.id %}">Session {{ event.session.id }}</a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{{ event.message }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No audit events have been recorded yet.</p>
+    {% endif %}
+</section>
+{% endblock content %}

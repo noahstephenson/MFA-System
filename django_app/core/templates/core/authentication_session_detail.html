@@ -1,0 +1,75 @@
+{% extends "core/base.html" %}
+
+{% block title %}Session {{ session.id }} | MFA System{% endblock title %}
+
+{% block content %}
+<section class="panel">
+    <h2>Authentication Session {{ session.id }}</h2>
+    <p class="muted">Current status for a single authentication attempt.</p>
+</section>
+
+<section class="panel">
+    <table>
+        <tbody>
+            <tr>
+                <th>Resource</th>
+                <td>{{ session.resource.name }}</td>
+            </tr>
+            <tr>
+                <th>User</th>
+                <td>{{ session.user.username|default:"Unknown" }}</td>
+            </tr>
+            <tr>
+                <th>Status</th>
+                <td><span class="status">{{ session.get_status_display }}</span></td>
+            </tr>
+            <tr>
+                <th>Decision</th>
+                <td>{{ session.get_decision_display }}</td>
+            </tr>
+            <tr>
+                <th>Progress</th>
+                <td>{{ session.accepted_factor_count }} of {{ session.required_factor_count }} accepted factors</td>
+            </tr>
+            <tr>
+                <th>Started</th>
+                <td>{{ session.started_at }}</td>
+            </tr>
+            <tr>
+                <th>Completed</th>
+                <td>{{ session.completed_at|default:"Not completed" }}</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <h2>Submitted Factors</h2>
+    {% if session.submitted_factors %}
+        <ul>
+            {% for factor in session.submitted_factors %}
+                <li>
+                    {{ factor.credential_type }} / {{ factor.identifier }} -
+                    {% if factor.matched %}accepted{% else %}rejected{% endif %}
+                    {% if factor.duplicate %}(duplicate){% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No factors submitted yet.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2>Session Audit Events</h2>
+    {% if session_audit_events %}
+        <ul>
+            {% for event in session_audit_events %}
+                <li>{{ event.timestamp }} - {{ event.event_type }} - {{ event.message }}</li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No audit events recorded for this session.</p>
+    {% endif %}
+</section>
+{% endblock content %}
