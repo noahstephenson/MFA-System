@@ -1,7 +1,10 @@
 # Python
 .venv/
+mfa-venv/
 __pycache__/
 *.pyc
+*.log
+.lgd-*
 
 # Django
 db.sqlite3
