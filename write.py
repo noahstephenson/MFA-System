@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from node_red.pi_drivers.rfid_write import main
+from node_red.write import main
 
 
 if __name__ == "__main__":
