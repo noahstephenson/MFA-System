@@ -1,0 +1,145 @@
+{% extends "core/base.html" %}
+
+{% block title %}Access Result {{ session.id }} | MFA Prototype{% endblock title %}
+
+{% block content %}
+<section class="panel">
+    <h1 style="margin-top: 0;">Access result</h1>
+    {% if session.is_access_granted %}
+        <div class="callout success">
+            <strong>Access granted</strong>
+            <div class="muted">Authentication succeeded and Django issued an access grant.</div>
+        </div>
+    {% else %}
+        <div class="callout warning">
+            <strong>Access denied</strong>
+            <div class="muted">{{ result_message }}</div>
+        </div>
+    {% endif %}
+</section>
+
+{% if factor_collection_result %}
+<section class="panel">
+    <h2 style="margin-top: 0;">Factor Collection</h2>
+    <ul class="detail-list">
+        <li>
+            <span class="detail-label">Source</span>
+            {{ factor_collection_result.source|default:"node_red" }}
+        </li>
+        <li>
+            <span class="detail-label">Collection Status</span>
+            {{ factor_collection_result.ok|yesno:"Complete,Incomplete" }}
+        </li>
+        {% if factor_collection_result.message %}
+        <li>
+            <span class="detail-label">Collection Message</span>
+            {{ factor_collection_result.message }}
+        </li>
+        {% endif %}
+        {% if factor_collection_result.rfid %}
+        <li>
+            <span class="detail-label">RFID</span>
+            {% if factor_collection_result.rfid.ok %}
+                UID {{ factor_collection_result.rfid.uid }}
+            {% else %}
+                {{ factor_collection_result.rfid.message|default:"RFID result unavailable." }}
+            {% endif %}
+        </li>
+        {% endif %}
+        {% if factor_collection_result.fingerprint %}
+        <li>
+            <span class="detail-label">Fingerprint</span>
+            {% if factor_collection_result.fingerprint.ok %}
+                Match {{ factor_collection_result.fingerprint.finger_id }}
+            {% else %}
+                {{ factor_collection_result.fingerprint.message|default:"Fingerprint result unavailable." }}
+            {% endif %}
+        </li>
+        {% endif %}
+    </ul>
+</section>
+{% endif %}
+
+<section class="panel">
+    <h2 style="margin-top: 0;">Session summary</h2>
+    <ul class="detail-list">
+        <li>
+            <span class="detail-label">Session</span>
+            {{ session.id }}
+        </li>
+        <li>
+            <span class="detail-label">Subject</span>
+            {{ session.user.username|default:"Unknown" }}
+        </li>
+        <li>
+            <span class="detail-label">Resource</span>
+            {{ session.resource.name }}
+        </li>
+        <li>
+            <span class="detail-label">Policy</span>
+            {{ session.policy.name|default:"Fallback policy" }}
+        </li>
+        <li>
+            <span class="detail-label">Authentication state</span>
+            {{ session.get_authentication_state_display }}
+        </li>
+        <li>
+            <span class="detail-label">Authorization state</span>
+            {{ session.get_authorization_state_display }}
+        </li>
+        <li>
+            <span class="detail-label">Accepted factors</span>
+            {{ session.accepted_factor_count }} of {{ session.required_factor_count }}
+        </li>
+        <li>
+            <span class="detail-label">Degraded mode</span>
+            {{ session.degraded_mode_applied|yesno:"Yes,No" }}
+        </li>
+        <li>
+            <span class="detail-label">Access grant</span>
+            {% if access_grant %}
+                Grant {{ access_grant.id }}{% if access_grant.expires_at %} until {{ access_grant.expires_at }}{% endif %}
+            {% else %}
+                No access grant issued
+            {% endif %}
+        </li>
+    </ul>
+</section>
+
+<section class="panel">
+    <h2 style="margin-top: 0;">Submitted factors</h2>
+    {% if session.submitted_factors %}
+        <ul class="detail-list">
+            {% for factor in session.submitted_factors %}
+                <li>
+                    <span class="detail-label">{{ factor.credential_type }}</span>
+                    {{ factor.identifier }}{% if factor.reason_message %} - {{ factor.reason_message }}{% endif %}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="muted">No factor attempts were recorded.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <h2 style="margin-top: 0;">Recent audit events</h2>
+    {% if audit_events %}
+        <ul class="detail-list">
+            {% for event in audit_events %}
+                <li>
+                    <span class="detail-label">{{ event.event_type }}</span>
+                    {{ event.message }}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="muted">No audit events were recorded for this session.</p>
+    {% endif %}
+</section>
+
+<div class="actions">
+    <a class="button" href="{% url 'core:access-start' %}">Start Another Attempt</a>
+    <a class="button secondary" href="{% url 'admin:index' %}">Open Admin</a>
+</div>
+{% endblock content %}
