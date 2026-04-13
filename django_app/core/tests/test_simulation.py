@@ -1,201 +1,102 @@
+from unittest.mock import patch
+
 from django.test import TestCase
 from django.urls import reverse
 
-from ..models import AccessPolicy, AuthenticationSession, ProtectedResource
+from ..models import AuthenticationSession, AuditEvent, Credential
 from .base import CoreTestDataMixin
 
 
-class SimulationWorkflowTests(CoreTestDataMixin, TestCase):
-    def test_simulation_start_page_loads(self):
-        response = self.client.get(reverse("core:simulation-start"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "core/simulation_start.html")
-        self.assertContains(response, "Start an Access Attempt")
-        self.assertContains(response, "Default Policy")
-        self.assertNotContains(response, "Demo policy override")
-
-    def test_simulation_start_creates_session_and_redirects(self):
-        response = self.client.post(
-            reverse("core:simulation-start"),
-            {
-                "user": self.user.id,
-                "resource": self.resource.id,
-            },
+class MVPAccessFlowTests(CoreTestDataMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.policy.allowed_factor_types = [
+            Credential.CredentialType.RFID,
+            Credential.CredentialType.BIOMETRIC,
+        ]
+        self.policy.minimum_distinct_factor_types = 2
+        self.policy.save(
+            update_fields=["allowed_factor_types", "minimum_distinct_factor_types", "updated_at"]
         )
 
-        session = AuthenticationSession.objects.get()
-        self.assertRedirects(response, reverse("core:simulation-session", args=[session.id]))
-        self.assertEqual(session.user, self.user)
-        self.assertEqual(session.resource, self.resource)
-        self.assertEqual(session.policy, self.policy)
-
-    def test_simulation_session_can_approve_access(self):
-        start_response = self.client.post(
-            reverse("core:simulation-start"),
-            {
-                "user": self.user.id,
-                "resource": self.resource.id,
-            },
-        )
-        session = AuthenticationSession.objects.get()
-
-        self.assertRedirects(start_response, reverse("core:simulation-session", args=[session.id]))
-
-        first_factor = self.client.post(
-            reverse("core:simulation-session", args=[session.id]),
-            {
-                "credential_type": "rfid",
-                "identifier": self.rfid.identifier,
-            },
-        )
-        self.assertRedirects(first_factor, reverse("core:simulation-session", args=[session.id]))
-
-        second_factor = self.client.post(
-            reverse("core:simulation-session", args=[session.id]),
-            {
-                "credential_type": "pin",
-                "identifier": self.pin.identifier,
-            },
-        )
-        self.assertRedirects(second_factor, reverse("core:simulation-result", args=[session.id]))
-
-        session.refresh_from_db()
-        self.assertEqual(session.status, AuthenticationSession.Status.APPROVED)
-
-        result_response = self.client.get(reverse("core:simulation-result", args=[session.id]))
-        self.assertContains(result_response, "Access granted")
-        self.assertContains(result_response, "Default Policy")
-
-    def test_simulation_session_can_end_as_denied(self):
-        self.client.post(
-            reverse("core:simulation-start"),
-            {
-                "user": self.user.id,
-                "resource": self.resource.id,
-            },
-        )
-        session = AuthenticationSession.objects.get()
+    @patch("core.services.node_red_client.collect_factors")
+    def test_html_access_flow_grants_access(self, mock_collect):
+        mock_collect.return_value = {
+            "ok": True,
+            "error": "",
+            "message": "",
+            "rfid": {"ok": True, "uid": self.rfid.identifier},
+            "fingerprint": {"ok": True, "matched": True, "finger_id": self.biometric.identifier},
+            "raw": {},
+            "status_code": 200,
+        }
 
         response = self.client.post(
-            reverse("core:simulation-session", args=[session.id]),
-            {"deny_session": "1"},
-        )
-
-        self.assertRedirects(response, reverse("core:simulation-result", args=[session.id]))
-
-        session.refresh_from_db()
-        self.assertEqual(session.status, AuthenticationSession.Status.DENIED)
-
-        result_response = self.client.get(reverse("core:simulation-result", args=[session.id]))
-        self.assertContains(result_response, "Access denied")
-
-    def test_simulation_result_redirects_back_to_session_until_complete(self):
-        self.client.post(
-            reverse("core:simulation-start"),
-            {
-                "user": self.user.id,
-                "resource": self.resource.id,
-            },
-        )
-        session = AuthenticationSession.objects.get()
-
-        response = self.client.get(reverse("core:simulation-result", args=[session.id]))
-
-        self.assertRedirects(response, reverse("core:simulation-session", args=[session.id]))
-
-    def test_simulation_session_shows_rejected_factor_after_invalid_submission(self):
-        self.client.post(
-            reverse("core:simulation-start"),
-            {
-                "user": self.user.id,
-                "resource": self.resource.id,
-            },
-        )
-        session = AuthenticationSession.objects.get()
-
-        response = self.client.post(
-            reverse("core:simulation-session", args=[session.id]),
-            {
-                "credential_type": "biometric",
-                "identifier": "missing-scan",
-            },
+            reverse("core:access-start-submit"),
+            {"user": self.user.id, "resource": self.resource.id},
             follow=True,
         )
 
+        session = AuthenticationSession.objects.get()
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Factor was not accepted.")
-        self.assertContains(response, "biometric / missing-scan -")
-        self.assertContains(response, "rejected")
+        self.assertContains(response, "Access granted")
+        self.assertEqual(session.status, AuthenticationSession.Status.APPROVED)
+        self.assertEqual(AuditEvent.objects.filter(event_type="access_granted", session=session).count(), 1)
 
-    def test_simulation_start_uses_the_selected_resource_policy(self):
-        other_resource = ProtectedResource.objects.create(name="Research Lab")
-        other_policy = AccessPolicy.objects.create(
-            resource=other_resource,
-            name="Research Policy",
-            required_factor_count=1,
-        )
+    @patch("core.services.node_red_client.collect_factors")
+    def test_html_access_flow_denies_access_when_node_red_returns_invalid_result(self, mock_collect):
+        mock_collect.return_value = {
+            "ok": False,
+            "error": "invalid_json",
+            "message": "Node-RED returned invalid JSON.",
+            "rfid": {"ok": False, "sensor": "rfid", "error": "missing", "message": "RFID data was not collected."},
+            "fingerprint": {
+                "ok": False,
+                "sensor": "fingerprint",
+                "error": "missing",
+                "message": "Fingerprint data was not collected.",
+            },
+            "raw": None,
+            "status_code": None,
+        }
 
         response = self.client.post(
-            reverse("core:simulation-start"),
-            {
-                "user": self.user.id,
-                "resource": other_resource.id,
-            },
+            reverse("core:access-start-submit"),
+            {"user": self.user.id, "resource": self.resource.id},
+            follow=True,
         )
 
         session = AuthenticationSession.objects.get()
-        self.assertRedirects(response, reverse("core:simulation-session", args=[session.id]))
-        self.assertEqual(session.resource, other_resource)
-        self.assertEqual(session.policy, other_policy)
-
-    def test_simulation_start_form_hides_inactive_users(self):
-        self.user.is_active = False
-        self.user.save(update_fields=["is_active"])
-
-        response = self.client.get(reverse("core:simulation-start"))
-
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, self.user.username)
+        self.assertContains(response, "Access denied")
+        self.assertEqual(session.status, AuthenticationSession.Status.DENIED)
+        self.assertEqual(AuditEvent.objects.filter(event_type="session_denied", session=session).count(), 1)
 
-    def test_completed_simulation_session_redirects_to_result_page(self):
-        quick_resource = ProtectedResource.objects.create(name="Front Entrance")
-        AccessPolicy.objects.create(
-            resource=quick_resource,
-            name="Simulation Quick Policy",
-            required_factor_count=1,
-        )
-        self.client.post(
-            reverse("core:simulation-start"),
-            {
-                "user": self.user.id,
-                "resource": quick_resource.id,
+    @patch("core.services.node_red_client.collect_factors")
+    def test_html_access_flow_denies_access_when_combined_result_is_partial(self, mock_collect):
+        mock_collect.return_value = {
+            "ok": True,
+            "error": "",
+            "message": "",
+            "rfid": {"ok": True, "uid": self.rfid.identifier},
+            "fingerprint": {
+                "ok": False,
+                "sensor": "fingerprint",
+                "matched": False,
+                "error": "missing",
+                "message": "Fingerprint data was not returned.",
             },
+            "raw": {},
+            "status_code": 200,
+        }
+
+        response = self.client.post(
+            reverse("core:access-start-submit"),
+            {"user": self.user.id, "resource": self.resource.id},
+            follow=True,
         )
+
         session = AuthenticationSession.objects.get()
-
-        self.client.post(
-            reverse("core:simulation-session", args=[session.id]),
-            {
-                "credential_type": "rfid",
-                "identifier": self.rfid.identifier,
-            },
-        )
-        response = self.client.get(reverse("core:simulation-session", args=[session.id]))
-
-        self.assertRedirects(response, reverse("core:simulation-result", args=[session.id]))
-
-    def test_simulation_session_shows_realistic_access_state_copy(self):
-        self.client.post(
-            reverse("core:simulation-start"),
-            {
-                "user": self.user.id,
-                "resource": self.resource.id,
-            },
-        )
-        session = AuthenticationSession.objects.get()
-
-        response = self.client.get(reverse("core:simulation-session", args=[session.id]))
-
-        self.assertContains(response, "Access attempt started")
-        self.assertContains(response, "Present factor 1")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Fingerprint data was not returned.")
+        self.assertEqual(session.status, AuthenticationSession.Status.DENIED)

@@ -19,3 +19,7 @@ node_red/flows_cred.json
 
 # Raspberry Pi local artifacts
 MFA Project/minicom.log
+
+# Local reference/design files kept outside the tracked repo
+docs/local_reference/
+desktop.ini

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from hardware.rfid_read import main
+from node_red.Read import main
 
 
 if __name__ == "__main__":

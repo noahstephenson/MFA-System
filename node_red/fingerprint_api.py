@@ -1,23 +1,22 @@
+#!/usr/bin/env python
+
+# SPDX-FileCopyrightText: 2021 ladyada for Adafruit Industries
+# SPDX-License-Identifier: MIT
+
 import time
 
 import adafruit_fingerprint
 import serial
 from flask import Flask, jsonify, request
 
+uart = serial.Serial("/dev/serial0", baudrate=57600, timeout=1)
+finger = adafruit_fingerprint.Adafruit_Fingerprint(uart)
 
 app = Flask(__name__)
 
 
-def create_sensor(port="/dev/serial0", baudrate=57600, timeout=1):
-    uart = serial.Serial(port, baudrate=baudrate, timeout=timeout)
-    return adafruit_fingerprint.Adafruit_Fingerprint(uart)
-
-
-finger = create_sensor()
-
-
 def get_fingerprint():
-    """Get a fingerprint image, template it, and search the sensor library."""
+    """Get a fingerprint image, template it, and search."""
     print("Waiting for image...")
     while finger.get_image() != adafruit_fingerprint.OK:
         pass
@@ -34,9 +33,13 @@ def get_fingerprint():
 
 
 def enroll_finger(location):
-    """Enroll a fingerprint at a given sensor location."""
+    """Enroll a fingerprint at a given ID (location)."""
     for fingerimg in range(1, 3):
-        prompt = "Place finger on sensor..." if fingerimg == 1 else "Place same finger again..."
+        prompt = (
+            "Place finger on sensor..."
+            if fingerimg == 1
+            else "Place same finger again..."
+        )
         print(prompt, end="")
 
         while True:
@@ -51,8 +54,9 @@ def enroll_finger(location):
                 return False
 
         print("Templating...", end="")
-        if finger.image_2_tz(fingerimg) != adafruit_fingerprint.OK:
-            print("Templating failed")
+        result = finger.image_2_tz(fingerimg)
+        if result != adafruit_fingerprint.OK:
+            print("Templating failed:", result)
             return False
 
         if fingerimg == 1:
@@ -96,10 +100,9 @@ def api_scan():
 
 @app.route("/enroll", methods=["POST"])
 def api_enroll():
-    payload = request.get_json(silent=True) or {}
     try:
-        location = int(payload["id"])
-    except (KeyError, TypeError, ValueError):
+        location = int(request.json["id"])
+    except Exception:
         return jsonify({"status": "error", "message": "missing id"}), 400
 
     if enroll_finger(location):
@@ -109,10 +112,9 @@ def api_enroll():
 
 @app.route("/delete", methods=["POST"])
 def api_delete():
-    payload = request.get_json(silent=True) or {}
     try:
-        location = int(payload["id"])
-    except (KeyError, TypeError, ValueError):
+        location = int(request.json["id"])
+    except Exception:
         return jsonify({"status": "error", "message": "missing id"}), 400
 
     if finger.delete_model(location) == adafruit_fingerprint.OK:
