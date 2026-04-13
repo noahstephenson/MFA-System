@@ -19,6 +19,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+If you only want the Django app on a non-Pi machine, install from `django_app/requirements.txt` instead so you do not pull Raspberry Pi hardware packages.
+
 Recommended entry points:
 
 ```bash

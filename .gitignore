@@ -23,3 +23,4 @@ MFA Project/minicom.log
 # Local reference/design files kept outside the tracked repo
 docs/local_reference/
 desktop.ini
+.codex
