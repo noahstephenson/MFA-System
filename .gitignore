@@ -14,3 +14,7 @@ db.sqlite3
 
 # Node-RED credentials
 node_red/flows_cred.json
+
+# Local reference/design files kept outside the tracked repo
+docs/local_reference/
+desktop.ini
