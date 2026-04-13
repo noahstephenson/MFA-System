@@ -1,6 +1,8 @@
 # Python
 .venv/
+venv/
 mfa-venv/
+MFA Project/mfa-venv/
 __pycache__/
 *.pyc
 *.log
@@ -14,3 +16,6 @@ db.sqlite3
 
 # Node-RED credentials
 node_red/flows_cred.json
+
+# Raspberry Pi local artifacts
+MFA Project/minicom.log
