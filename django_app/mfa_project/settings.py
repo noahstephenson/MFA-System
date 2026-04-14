@@ -125,5 +125,5 @@ MFA_API_SHARED_SECRET = os.environ.get("MFA_API_SHARED_SECRET", "").strip()
 
 # Local Node-RED integration settings.
 NODE_RED_BASE_URL = os.environ.get("NODE_RED_BASE_URL", "http://127.0.0.1:1880").rstrip("/")
-NODE_RED_TIMEOUT = float(os.environ.get("NODE_RED_TIMEOUT", "5"))
+NODE_RED_TIMEOUT = float(os.environ.get("NODE_RED_TIMEOUT", "60"))
 NODE_RED_SHARED_SECRET = os.environ.get("NODE_RED_SHARED_SECRET", "").strip()
