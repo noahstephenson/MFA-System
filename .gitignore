@@ -22,5 +22,8 @@ MFA Project/minicom.log
 
 # Local reference/design files kept outside the tracked repo
 docs/local_reference/
+!docs/local_reference/
+docs/local_reference/*
+!docs/local_reference/Tiered_MFA_MBSE_Definitive_Version_V3.mdzip
 desktop.ini
 .codex
