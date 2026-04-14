@@ -31,3 +31,9 @@ class CoreTestDataMixin:
             identifier="2468",
             label="Alice PIN",
         )
+        self.biometric = Credential.objects.create(
+            user=self.user,
+            credential_type=Credential.CredentialType.BIOMETRIC,
+            identifier="4",
+            label="Alice fingerprint",
+        )

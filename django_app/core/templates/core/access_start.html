@@ -6,13 +6,13 @@
 <section class="panel">
     <h1 style="margin-top: 0;">Start access attempt</h1>
     <p class="muted">
-        Django will create the session and ask Node-RED to collect the required
-        factors for the selected subject and resource.
+        Django will create the session, call the working Node-RED combined factor
+        endpoint, and then decide grant or deny from the enrolled credentials.
     </p>
 </section>
 
 <section class="panel">
-    <form method="post" action="{% url 'core:access-start-submit' %}">
+    <form method="post" action="{% url 'core:access-start' %}">
         {% csrf_token %}
         {{ form.non_field_errors }}
         <div class="form-grid">
@@ -29,7 +29,7 @@
         </div>
         <div class="actions" style="margin-top: 1rem;">
             <button type="submit">Run Access Attempt</button>
-            <a class="button secondary" href="{% url 'admin:index' %}">Admin</a>
+            <a class="button secondary" href="{% url 'admin:index' %}">Open Admin</a>
         </div>
     </form>
 </section>
