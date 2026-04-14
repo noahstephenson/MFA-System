@@ -1,538 +1,538 @@
 [
-  {
-    "id": "7b1c7d3dd56a8c11",
-    "type": "tab",
-    "label": "MFA Pi MVP",
-    "disabled": false,
-    "info": ""
-  },
-  {
-    "id": "c41771a59872c4e0",
-    "type": "comment",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Edit After Import",
-    "info": "",
-    "x": 180,
-    "y": 40,
-    "wires": [],
-    "text": "Edit these placeholders after import before you deploy:\\n- /usr/bin/python3\\n- /home/pi/MFA-System\\n- http://127.0.0.1:1880\\nThe RFID and fingerprint endpoints run repo scripts directly. The combined endpoint calls those two Node-RED HTTP endpoints in sequence."
-  },
-  {
-    "id": "f1a2b3c4d5e60111",
-    "type": "http in",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "POST /api/rfid/read",
-    "url": "/api/rfid/read",
-    "method": "post",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 170,
-    "y": 120,
-    "wires": [
-      [
-        "f1a2b3c4d5e60112"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60112",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Build RFID Exec Payload",
-    "func": "let body = msg.payload;\\nif (typeof body === \"string\" && body.trim()) {\\n    try {\\n        body = JSON.parse(body);\\n    } catch (error) {\\n        body = {};\\n    }\\n}\\nif (!body || typeof body !== \"object\" || Array.isArray(body)) {\\n    body = {};\\n}\\nconst timeout = Number(body.timeout_seconds);\\nconst effectiveTimeout = Number.isFinite(timeout) && timeout > 0 ? timeout : 10;\\nmsg.payload = String(effectiveTimeout);\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 430,
-    "y": 120,
-    "wires": [
-      [
-        "f1a2b3c4d5e60113"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60113",
-    "type": "exec",
-    "z": "7b1c7d3dd56a8c11",
-    "command": "/usr/bin/python3",
-    "addpay": true,
-    "append": "/home/pi/MFA-System/node_red/Read.py --timeout",
-    "useSpawn": "false",
-    "timer": "",
-    "winHide": false,
-    "oldrc": false,
-    "name": "Run Read.py",
-    "x": 690,
-    "y": 120,
-    "wires": [
-      [
-        "f1a2b3c4d5e60114"
-      ],
-      [
-        "f1a2b3c4d5e60115"
-      ],
-      []
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60114",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Normalize RFID JSON",
-    "func": "let raw = msg.payload;\\nif (Buffer.isBuffer(raw)) {\\n    raw = raw.toString();\\n}\\nif (typeof raw !== \"string\") {\\n    raw = JSON.stringify(raw || {});\\n}\\nraw = raw.trim();\\nlet data;\\ntry {\\n    data = JSON.parse(raw);\\n} catch (error) {\\n    msg.statusCode = 502;\\n    msg.payload = { ok: false, sensor: \"rfid\", error: \"invalid_json\", message: \"RFID script returned invalid JSON.\" };\\n    return msg;\\n}\\nif (data && data.ok === true && data.uid) {\\n    msg.statusCode = 200;\\n    msg.payload = { ok: true, sensor: \"rfid\", uid: String(data.uid), message: String(data.message || \"\") };\\n    return msg;\\n}\\nconst errorCode = String((data && data.error) || \"rfid_error\");\\nconst message = String((data && data.message) || \"RFID read failed.\");\\nmsg.statusCode = errorCode === \"timeout\" ? 504 : 502;\\nmsg.payload = { ok: false, sensor: \"rfid\", error: errorCode, message };\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 950,
-    "y": 100,
-    "wires": [
-      [
-        "f1a2b3c4d5e60116"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60115",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "RFID Exec Error",
-    "func": "const stderr = Buffer.isBuffer(msg.payload) ? msg.payload.toString() : String(msg.payload || \"\");\\nmsg.statusCode = 500;\\nmsg.payload = {\\n    ok: false,\\n    sensor: \"rfid\",\\n    error: \"execution_error\",\\n    message: stderr.trim() || \"RFID command failed.\"\\n};\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 940,
-    "y": 140,
-    "wires": [
-      [
-        "f1a2b3c4d5e60116"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60116",
-    "type": "http response",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "",
-    "statusCode": "",
-    "headers": {},
-    "x": 1170,
-    "y": 120,
-    "wires": []
-  },
-  {
-    "id": "f1a2b3c4d5e60211",
-    "type": "http in",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "POST /api/fingerprint/verify",
-    "url": "/api/fingerprint/verify",
-    "method": "post",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 190,
-    "y": 220,
-    "wires": [
-      [
-        "f1a2b3c4d5e60212"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60212",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Build Fingerprint Exec Payload",
-    "func": "let body = msg.payload;\\nif (typeof body === \"string\" && body.trim()) {\\n    try {\\n        body = JSON.parse(body);\\n    } catch (error) {\\n        body = {};\\n    }\\n}\\nif (!body || typeof body !== \"object\" || Array.isArray(body)) {\\n    body = {};\\n}\\nconst timeout = Number(body.timeout_seconds);\\nconst effectiveTimeout = Number.isFinite(timeout) && timeout > 0 ? timeout : 10;\\nmsg.payload = String(effectiveTimeout);\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 450,
-    "y": 220,
-    "wires": [
-      [
-        "f1a2b3c4d5e60213"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60213",
-    "type": "exec",
-    "z": "7b1c7d3dd56a8c11",
-    "command": "/usr/bin/python3",
-    "addpay": true,
-    "append": "/home/pi/MFA-System/node_red/fingerprint_verify.py --timeout",
-    "useSpawn": "false",
-    "timer": "",
-    "winHide": false,
-    "oldrc": false,
-    "name": "Run fingerprint_verify.py",
-    "x": 730,
-    "y": 220,
-    "wires": [
-      [
-        "f1a2b3c4d5e60214"
-      ],
-      [
-        "f1a2b3c4d5e60215"
-      ],
-      []
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60214",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Normalize Fingerprint JSON",
-    "func": "let raw = msg.payload;\\nif (Buffer.isBuffer(raw)) {\\n    raw = raw.toString();\\n}\\nif (typeof raw !== \"string\") {\\n    raw = JSON.stringify(raw || {});\\n}\\nraw = raw.trim();\\nlet data;\\ntry {\\n    data = JSON.parse(raw);\\n} catch (error) {\\n    msg.statusCode = 502;\\n    msg.payload = { ok: false, sensor: \"fingerprint\", matched: false, error: \"invalid_json\", message: \"Fingerprint script returned invalid JSON.\" };\\n    return msg;\\n}\\nif (data && data.ok === true && data.matched === true && data.finger_id !== undefined && data.finger_id !== null) {\\n    msg.statusCode = 200;\\n    msg.payload = {\\n        ok: true,\\n        sensor: \"fingerprint\",\\n        matched: true,\\n        finger_id: Number(data.finger_id),\\n        confidence: data.confidence !== undefined ? Number(data.confidence) : undefined,\\n        message: String(data.message || \"\")\\n    };\\n    return msg;\\n}\\nconst errorCode = String((data && data.error) || \"fingerprint_error\");\\nconst message = String((data && data.message) || \"Fingerprint verification failed.\");\\nmsg.statusCode = errorCode === \"timeout\" ? 504 : (errorCode === \"not_matched\" ? 200 : 502);\\nmsg.payload = { ok: false, sensor: \"fingerprint\", matched: false, error: errorCode, message };\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 980,
-    "y": 200,
-    "wires": [
-      [
-        "f1a2b3c4d5e60216"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60215",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Fingerprint Exec Error",
-    "func": "const stderr = Buffer.isBuffer(msg.payload) ? msg.payload.toString() : String(msg.payload || \"\");\\nmsg.statusCode = 500;\\nmsg.payload = {\\n    ok: false,\\n    sensor: \"fingerprint\",\\n    matched: false,\\n    error: \"execution_error\",\\n    message: stderr.trim() || \"Fingerprint command failed.\"\\n};\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 970,
-    "y": 240,
-    "wires": [
-      [
-        "f1a2b3c4d5e60216"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60216",
-    "type": "http response",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "",
-    "statusCode": "",
-    "headers": {},
-    "x": 1190,
-    "y": 220,
-    "wires": []
-  },
-  {
-    "id": "f1a2b3c4d5e60311",
-    "type": "http in",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "POST /api/auth/collect-factors",
-    "url": "/api/auth/collect-factors",
-    "method": "post",
-    "upload": false,
-    "swaggerDoc": "",
-    "x": 200,
-    "y": 360,
-    "wires": [
-      [
-        "f1a2b3c4d5e60312"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60312",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Init Collect Request",
-    "func": "let body = msg.payload;\\nif (typeof body === \"string\" && body.trim()) {\\n    try {\\n        body = JSON.parse(body);\\n    } catch (error) {\\n        body = {};\\n    }\\n}\\nif (!body || typeof body !== \"object\" || Array.isArray(body)) {\\n    body = {};\\n}\\nconst allowed = Array.isArray(body.allowed_factor_types) ? body.allowed_factor_types.map((value) => String(value).toLowerCase()) : [];\\nconst allowAll = allowed.length === 0;\\nfunction timeoutValue(fieldName, fallback) {\\n    const value = Number(body[fieldName]);\\n    return Number.isFinite(value) && value > 0 ? value : fallback;\\n}\\nmsg.mfa = {\\n    request: body,\\n    needRfid: allowAll || allowed.includes(\"rfid\"),\\n    needFingerprint: allowAll || allowed.includes(\"biometric\") || allowed.includes(\"fingerprint\"),\\n    rfidTimeoutSeconds: timeoutValue(\"rfid_timeout_seconds\", 10),\\n    fingerprintTimeoutSeconds: timeoutValue(\"fingerprint_timeout_seconds\", 10),\\n    result: {\\n        ok: true,\\n        message: \"\",\\n        rfid: null,\\n        fingerprint: null\\n    },\\n    statusCode: 200\\n};\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 450,
-    "y": 360,
-    "wires": [
-      [
-        "f1a2b3c4d5e60313"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60313",
-    "type": "switch",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Need RFID?",
-    "property": "mfa.needRfid",
-    "propertyType": "msg",
-    "rules": [
-      {
-        "t": "true"
-      },
-      {
-        "t": "else"
-      }
-    ],
-    "checkall": "true",
-    "repair": false,
-    "outputs": 2,
-    "x": 680,
-    "y": 360,
-    "wires": [
-      [
-        "f1a2b3c4d5e60314"
-      ],
-      [
-        "f1a2b3c4d5e60317"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60314",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Call /api/rfid/read",
-    "func": "msg.method = \"POST\";\\nmsg.url = \"http://127.0.0.1:1880/api/rfid/read\";\\nmsg.headers = {\"Content-Type\": \"application/json\"};\\nmsg.payload = { timeout_seconds: msg.mfa.rfidTimeoutSeconds };\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 920,
-    "y": 340,
-    "wires": [
-      [
-        "f1a2b3c4d5e60315"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60315",
-    "type": "http request",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "HTTP RFID Read",
-    "method": "use",
-    "ret": "obj",
-    "paytoqs": "ignore",
-    "url": "",
-    "tls": "",
-    "persist": false,
-    "proxy": "",
-    "authType": "",
-    "x": 1140,
-    "y": 340,
-    "wires": [
-      [
-        "f1a2b3c4d5e60316"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60316",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Store RFID Result",
-    "func": "const data = msg.payload && typeof msg.payload === \"object\" && !Array.isArray(msg.payload) ? msg.payload : {};\\nif (data.ok === true && data.uid) {\\n    msg.mfa.result.rfid = { ok: true, sensor: \"rfid\", uid: String(data.uid), message: String(data.message || \"\") };\\n    return [msg, null];\\n}\\nconst errorCode = String(data.error || \"rfid_error\");\\nconst message = String(data.message || \"RFID read failed.\");\\nmsg.mfa.result.rfid = { ok: false, sensor: \"rfid\", error: errorCode, message };\\nmsg.mfa.result.ok = false;\\nmsg.mfa.result.error = errorCode;\\nmsg.mfa.result.message = message;\\nmsg.mfa.statusCode = Number(msg.statusCode) || (errorCode === \"timeout\" ? 504 : 502);\\nreturn [null, msg];",
-    "outputs": 2,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 1370,
-    "y": 340,
-    "wires": [
-      [
-        "f1a2b3c4d5e60318"
-      ],
-      [
-        "f1a2b3c4d5e6031d"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60317",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Skip RFID",
-    "func": "msg.mfa.result.rfid = {\\n    ok: false,\\n    sensor: \"rfid\",\\n    error: \"skipped\",\\n    message: \"RFID factor not requested.\"\\n};\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 910,
-    "y": 380,
-    "wires": [
-      [
-        "f1a2b3c4d5e60318"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60318",
-    "type": "switch",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Need Fingerprint?",
-    "property": "mfa.needFingerprint",
-    "propertyType": "msg",
-    "rules": [
-      {
-        "t": "true"
-      },
-      {
-        "t": "else"
-      }
-    ],
-    "checkall": "true",
-    "repair": false,
-    "outputs": 2,
-    "x": 1630,
-    "y": 360,
-    "wires": [
-      [
-        "f1a2b3c4d5e60319"
-      ],
-      [
-        "f1a2b3c4d5e6031c"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e60319",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Call /api/fingerprint/verify",
-    "func": "msg.method = \"POST\";\\nmsg.url = \"http://127.0.0.1:1880/api/fingerprint/verify\";\\nmsg.headers = {\"Content-Type\": \"application/json\"};\\nmsg.payload = { timeout_seconds: msg.mfa.fingerprintTimeoutSeconds };\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 1890,
-    "y": 340,
-    "wires": [
-      [
-        "f1a2b3c4d5e6031a"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e6031a",
-    "type": "http request",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "HTTP Fingerprint Verify",
-    "method": "use",
-    "ret": "obj",
-    "paytoqs": "ignore",
-    "url": "",
-    "tls": "",
-    "persist": false,
-    "proxy": "",
-    "authType": "",
-    "x": 2150,
-    "y": 340,
-    "wires": [
-      [
-        "f1a2b3c4d5e6031b"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e6031b",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Store Fingerprint Result",
-    "func": "const data = msg.payload && typeof msg.payload === \"object\" && !Array.isArray(msg.payload) ? msg.payload : {};\\nif (data.ok === true && data.matched === true && data.finger_id !== undefined && data.finger_id !== null) {\\n    msg.mfa.result.fingerprint = {\\n        ok: true,\\n        sensor: \"fingerprint\",\\n        matched: true,\\n        finger_id: Number(data.finger_id),\\n        confidence: data.confidence !== undefined ? Number(data.confidence) : undefined,\\n        message: String(data.message || \"\")\\n    };\\n    return [msg, null];\\n}\\nconst errorCode = String(data.error || \"fingerprint_error\");\\nconst message = String(data.message || \"Fingerprint verification failed.\");\\nmsg.mfa.result.fingerprint = { ok: false, sensor: \"fingerprint\", matched: false, error: errorCode, message };\\nif (errorCode === \"not_matched\") {\\n    return [msg, null];\\n}\\nmsg.mfa.result.ok = false;\\nmsg.mfa.result.error = errorCode;\\nmsg.mfa.result.message = message;\\nmsg.mfa.statusCode = Number(msg.statusCode) || (errorCode === \"timeout\" ? 504 : 502);\\nreturn [null, msg];",
-    "outputs": 2,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 2410,
-    "y": 340,
-    "wires": [
-      [
-        "f1a2b3c4d5e6031d"
-      ],
-      [
-        "f1a2b3c4d5e6031d"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e6031c",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Skip Fingerprint",
-    "func": "msg.mfa.result.fingerprint = {\\n    ok: false,\\n    sensor: \"fingerprint\",\\n    matched: false,\\n    error: \"skipped\",\\n    message: \"Fingerprint factor not requested.\"\\n};\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 1890,
-    "y": 380,
-    "wires": [
-      [
-        "f1a2b3c4d5e6031d"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e6031d",
-    "type": "function",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "Finalize Combined Response",
-    "func": "const result = msg.mfa && msg.mfa.result ? msg.mfa.result : {};\\nif (result.ok === false) {\\n    msg.statusCode = msg.mfa.statusCode || 502;\\n    msg.payload = {\\n        ok: false,\\n        error: String(result.error || \"factor_collection_failed\"),\\n        message: String(result.message || \"Factor collection failed.\")\\n    };\\n    return msg;\\n}\\nmsg.statusCode = 200;\\nmsg.payload = {\\n    ok: true,\\n    message: \"\",\\n    rfid: result.rfid || { ok: false, sensor: \"rfid\", error: \"missing\", message: \"RFID data was not collected.\" },\\n    fingerprint: result.fingerprint || { ok: false, sensor: \"fingerprint\", matched: false, error: \"missing\", message: \"Fingerprint data was not collected.\" }\\n};\\nreturn msg;",
-    "outputs": 1,
-    "timeout": "",
-    "noerr": 0,
-    "initialize": "",
-    "finalize": "",
-    "libs": [],
-    "x": 2680,
-    "y": 360,
-    "wires": [
-      [
-        "f1a2b3c4d5e6031e"
-      ]
-    ]
-  },
-  {
-    "id": "f1a2b3c4d5e6031e",
-    "type": "http response",
-    "z": "7b1c7d3dd56a8c11",
-    "name": "",
-    "statusCode": "",
-    "headers": {},
-    "x": 2920,
-    "y": 360,
-    "wires": []
-  }
+    {
+        "id": "7b1c7d3dd56a8c11",
+        "type": "tab",
+        "label": "MFA Pi MVP",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "c41771a59872c4e0",
+        "type": "comment",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Edit After Import",
+        "info": "",
+        "x": 180,
+        "y": 40,
+        "wires": [],
+        "text": "Edit these placeholders after import before you deploy:\n- /usr/bin/python3\n- /home/raspi/MFA-System\n- http://127.0.0.1:1880\nThe RFID and fingerprint endpoints run repo scripts directly. The combined endpoint calls those two Node-RED HTTP endpoints in sequence."
+    },
+    {
+        "id": "f1a2b3c4d5e60111",
+        "type": "http in",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "POST /api/rfid/read",
+        "url": "/api/rfid/read",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 170,
+        "y": 120,
+        "wires": [
+            [
+                "f1a2b3c4d5e60112"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60112",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Build RFID Exec Payload",
+        "func": "let body = msg.payload;\nif (typeof body === \"string\" && body.trim()) {\n    try {\n        body = JSON.parse(body);\n    } catch (error) {\n        body = {};\n    }\n}\nif (!body || typeof body !== \"object\" || Array.isArray(body)) {\n    body = {};\n}\nconst timeout = Number(body.timeout_seconds);\nconst effectiveTimeout = Number.isFinite(timeout) && timeout > 0 ? timeout : 15;\nmsg.payload = `/home/raspi/MFA-System/node_red/Read.py --timeout ${effectiveTimeout}`;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 430,
+        "y": 120,
+        "wires": [
+            [
+                "f1a2b3c4d5e60113"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60113",
+        "type": "exec",
+        "z": "7b1c7d3dd56a8c11",
+        "command": "/home/raspi/py313env/bin/python",
+        "addpay": "payload",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "Run Read.py",
+        "x": 690,
+        "y": 120,
+        "wires": [
+            [
+                "f1a2b3c4d5e60114"
+            ],
+            [
+                "f1a2b3c4d5e60115"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60114",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Normalize RFID JSON",
+        "func": "let raw = msg.payload;\nif (Buffer.isBuffer(raw)) {\n    raw = raw.toString();\n}\nif (typeof raw !== \"string\") {\n    raw = JSON.stringify(raw || {});\n}\nraw = raw.trim();\nlet data;\ntry {\n    data = JSON.parse(raw);\n} catch (error) {\n    msg.statusCode = 502;\n    msg.payload = { ok: false, sensor: \"rfid\", error: \"invalid_json\", message: \"RFID script returned invalid JSON.\" };\n    return msg;\n}\nif (data && data.ok === true && data.uid) {\n    msg.statusCode = 200;\n    msg.payload = { ok: true, sensor: \"rfid\", uid: String(data.uid), message: String(data.message || \"\") };\n    return msg;\n}\nconst errorCode = String((data && data.error) || \"rfid_error\");\nconst message = String((data && data.message) || \"RFID read failed.\");\nmsg.statusCode = errorCode === \"timeout\" ? 504 : 502;\nmsg.payload = { ok: false, sensor: \"rfid\", error: errorCode, message };\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 950,
+        "y": 100,
+        "wires": [
+            [
+                "f1a2b3c4d5e60116"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60115",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "RFID Exec Error",
+        "func": "const stderr = Buffer.isBuffer(msg.payload) ? msg.payload.toString() : String(msg.payload || \"\");\nmsg.statusCode = 500;\nmsg.payload = {\n    ok: false,\n    sensor: \"rfid\",\n    error: \"execution_error\",\n    message: stderr.trim() || \"RFID command failed.\"\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 940,
+        "y": 140,
+        "wires": [
+            [
+                "f1a2b3c4d5e60116"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60116",
+        "type": "http response",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "",
+        "statusCode": "",
+        "headers": {},
+        "x": 1170,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "f1a2b3c4d5e60211",
+        "type": "http in",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "POST /api/fingerprint/verify",
+        "url": "/api/fingerprint/verify",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 190,
+        "y": 220,
+        "wires": [
+            [
+                "f1a2b3c4d5e60212"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60212",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Build Fingerprint Exec Payload",
+        "func": "let body = msg.payload;\nif (typeof body === \"string\" && body.trim()) {\n    try {\n        body = JSON.parse(body);\n    } catch (error) {\n        body = {};\n    }\n}\nif (!body || typeof body !== \"object\" || Array.isArray(body)) {\n    body = {};\n}\nconst timeout = Number(body.timeout_seconds);\nconst effectiveTimeout = Number.isFinite(timeout) && timeout > 0 ? timeout : 20;\nmsg.payload = `/home/raspi/MFA-System/node_red/fingerprint_verify.py --timeout ${effectiveTimeout}`;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 220,
+        "wires": [
+            [
+                "f1a2b3c4d5e60213"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60213",
+        "type": "exec",
+        "z": "7b1c7d3dd56a8c11",
+        "command": "/home/raspi/py313env/bin/python",
+        "addpay": "payload",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "Run fingerprint_verify.py",
+        "x": 730,
+        "y": 220,
+        "wires": [
+            [
+                "f1a2b3c4d5e60214"
+            ],
+            [
+                "f1a2b3c4d5e60215"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60214",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Normalize Fingerprint JSON",
+        "func": "let raw = msg.payload;\nif (Buffer.isBuffer(raw)) {\n    raw = raw.toString();\n}\nif (typeof raw !== \"string\") {\n    raw = JSON.stringify(raw || {});\n}\nraw = raw.trim();\nlet data;\ntry {\n    data = JSON.parse(raw);\n} catch (error) {\n    msg.statusCode = 502;\n    msg.payload = { ok: false, sensor: \"fingerprint\", matched: false, error: \"invalid_json\", message: \"Fingerprint script returned invalid JSON.\" };\n    return msg;\n}\nif (data && data.ok === true && data.matched === true && data.finger_id !== undefined && data.finger_id !== null) {\n    msg.statusCode = 200;\n    msg.payload = {\n        ok: true,\n        sensor: \"fingerprint\",\n        matched: true,\n        finger_id: Number(data.finger_id),\n        confidence: data.confidence !== undefined ? Number(data.confidence) : undefined,\n        message: String(data.message || \"\")\n    };\n    return msg;\n}\nconst errorCode = String((data && data.error) || \"fingerprint_error\");\nconst message = String((data && data.message) || \"Fingerprint verification failed.\");\nmsg.statusCode = errorCode === \"timeout\" ? 504 : (errorCode === \"not_matched\" ? 200 : 502);\nmsg.payload = { ok: false, sensor: \"fingerprint\", matched: false, error: errorCode, message };\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 980,
+        "y": 200,
+        "wires": [
+            [
+                "f1a2b3c4d5e60216"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60215",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Fingerprint Exec Error",
+        "func": "const stderr = Buffer.isBuffer(msg.payload) ? msg.payload.toString() : String(msg.payload || \"\");\nmsg.statusCode = 500;\nmsg.payload = {\n    ok: false,\n    sensor: \"fingerprint\",\n    matched: false,\n    error: \"execution_error\",\n    message: stderr.trim() || \"Fingerprint command failed.\"\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 970,
+        "y": 240,
+        "wires": [
+            [
+                "f1a2b3c4d5e60216"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60216",
+        "type": "http response",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "",
+        "statusCode": "",
+        "headers": {},
+        "x": 1190,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "f1a2b3c4d5e60311",
+        "type": "http in",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "POST /api/auth/collect-factors",
+        "url": "/api/auth/collect-factors",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 200,
+        "y": 360,
+        "wires": [
+            [
+                "f1a2b3c4d5e60312"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60312",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Init Collect Request",
+        "func": "let body = msg.payload;\nif (typeof body === \"string\" && body.trim()) {\n    try {\n        body = JSON.parse(body);\n    } catch (error) {\n        body = {};\n    }\n}\nif (!body || typeof body !== \"object\" || Array.isArray(body)) {\n    body = {};\n}\nconst allowed = Array.isArray(body.allowed_factor_types) ? body.allowed_factor_types.map((value) => String(value).toLowerCase()) : [];\nconst allowAll = allowed.length === 0;\nconst sharedTimeout = Number(body.timeout_seconds);\nfunction timeoutValue(fieldName, fallback) {\n    const value = Number(body[fieldName]);\n    if (Number.isFinite(value) && value > 0) {\n        return value;\n    }\n    if (Number.isFinite(sharedTimeout) && sharedTimeout > 0) {\n        return sharedTimeout;\n    }\n    return fallback;\n}\nmsg.mfa = {\n    request: body,\n    needRfid: allowAll || allowed.includes(\"rfid\"),\n    needFingerprint: allowAll || allowed.includes(\"biometric\") || allowed.includes(\"fingerprint\"),\n    rfidTimeoutSeconds: timeoutValue(\"rfid_timeout_seconds\", 15),\n    fingerprintTimeoutSeconds: timeoutValue(\"fingerprint_timeout_seconds\", 20),\n    result: {\n        ok: true,\n        message: \"\",\n        rfid: null,\n        fingerprint: null\n    },\n    statusCode: 200\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 450,
+        "y": 360,
+        "wires": [
+            [
+                "f1a2b3c4d5e60313"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60313",
+        "type": "switch",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Need RFID?",
+        "property": "mfa.needRfid",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "true"
+            },
+            {
+                "t": "else"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 2,
+        "x": 680,
+        "y": 360,
+        "wires": [
+            [
+                "f1a2b3c4d5e60314"
+            ],
+            [
+                "f1a2b3c4d5e60317"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60314",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Call /api/rfid/read",
+        "func": "msg.method = \"POST\";\nmsg.url = \"http://127.0.0.1:1880/api/rfid/read\";\nmsg.headers = {\"Content-Type\": \"application/json\"};\nmsg.payload = { timeout_seconds: msg.mfa.rfidTimeoutSeconds };\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 920,
+        "y": 340,
+        "wires": [
+            [
+                "f1a2b3c4d5e60315"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60315",
+        "type": "http request",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "HTTP RFID Read",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "authType": "",
+        "x": 1140,
+        "y": 340,
+        "wires": [
+            [
+                "f1a2b3c4d5e60316"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60316",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Store RFID Result",
+        "func": "const data = msg.payload && typeof msg.payload === \"object\" && !Array.isArray(msg.payload) ? msg.payload : {};\nif (data.ok === true && data.uid) {\n    msg.mfa.result.rfid = { ok: true, sensor: \"rfid\", uid: String(data.uid), message: String(data.message || \"\") };\n    return [msg, null];\n}\nconst errorCode = String(data.error || \"rfid_error\");\nconst message = String(data.message || \"RFID read failed.\");\nmsg.mfa.result.rfid = { ok: false, sensor: \"rfid\", error: errorCode, message };\nmsg.mfa.result.ok = false;\nmsg.mfa.result.error = errorCode;\nmsg.mfa.result.message = message;\nmsg.mfa.statusCode = Number(msg.statusCode) || (errorCode === \"timeout\" ? 504 : 502);\nreturn [null, msg];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1370,
+        "y": 340,
+        "wires": [
+            [
+                "f1a2b3c4d5e60318"
+            ],
+            [
+                "f1a2b3c4d5e6031d"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60317",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Skip RFID",
+        "func": "msg.mfa.result.rfid = {\n    ok: false,\n    sensor: \"rfid\",\n    error: \"skipped\",\n    message: \"RFID factor not requested.\"\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 910,
+        "y": 380,
+        "wires": [
+            [
+                "f1a2b3c4d5e60318"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60318",
+        "type": "switch",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Need Fingerprint?",
+        "property": "mfa.needFingerprint",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "true"
+            },
+            {
+                "t": "else"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 2,
+        "x": 1630,
+        "y": 360,
+        "wires": [
+            [
+                "f1a2b3c4d5e60319"
+            ],
+            [
+                "f1a2b3c4d5e6031c"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60319",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Call /api/fingerprint/verify",
+        "func": "msg.method = \"POST\";\nmsg.url = \"http://127.0.0.1:1880/api/fingerprint/verify\";\nmsg.headers = {\"Content-Type\": \"application/json\"};\nmsg.payload = { timeout_seconds: msg.mfa.fingerprintTimeoutSeconds };\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1890,
+        "y": 340,
+        "wires": [
+            [
+                "f1a2b3c4d5e6031a"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e6031a",
+        "type": "http request",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "HTTP Fingerprint Verify",
+        "method": "use",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "authType": "",
+        "x": 2150,
+        "y": 340,
+        "wires": [
+            [
+                "f1a2b3c4d5e6031b"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e6031b",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Store Fingerprint Result",
+        "func": "const data = msg.payload && typeof msg.payload === \"object\" && !Array.isArray(msg.payload) ? msg.payload : {};\nif (data.ok === true && data.matched === true && data.finger_id !== undefined && data.finger_id !== null) {\n    msg.mfa.result.fingerprint = {\n        ok: true,\n        sensor: \"fingerprint\",\n        matched: true,\n        finger_id: Number(data.finger_id),\n        confidence: data.confidence !== undefined ? Number(data.confidence) : undefined,\n        message: String(data.message || \"\")\n    };\n    return [msg, null];\n}\nconst errorCode = String(data.error || \"fingerprint_error\");\nconst message = String(data.message || \"Fingerprint verification failed.\");\nmsg.mfa.result.fingerprint = { ok: false, sensor: \"fingerprint\", matched: false, error: errorCode, message };\nif (errorCode === \"not_matched\") {\n    return [msg, null];\n}\nmsg.mfa.result.ok = false;\nmsg.mfa.result.error = errorCode;\nmsg.mfa.result.message = message;\nmsg.mfa.statusCode = Number(msg.statusCode) || (errorCode === \"timeout\" ? 504 : 502);\nreturn [null, msg];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 2410,
+        "y": 340,
+        "wires": [
+            [
+                "f1a2b3c4d5e6031d"
+            ],
+            [
+                "f1a2b3c4d5e6031d"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e6031c",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Skip Fingerprint",
+        "func": "msg.mfa.result.fingerprint = {\n    ok: false,\n    sensor: \"fingerprint\",\n    matched: false,\n    error: \"skipped\",\n    message: \"Fingerprint factor not requested.\"\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1890,
+        "y": 380,
+        "wires": [
+            [
+                "f1a2b3c4d5e6031d"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e6031d",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Finalize Combined Response",
+        "func": "const result = msg.mfa && msg.mfa.result ? msg.mfa.result : {};\nif (result.ok === false) {\n    msg.statusCode = msg.mfa.statusCode || 502;\n    msg.payload = {\n        ok: false,\n        error: String(result.error || \"factor_collection_failed\"),\n        message: String(result.message || \"Factor collection failed.\")\n    };\n    return msg;\n}\nmsg.statusCode = 200;\nmsg.payload = {\n    ok: true,\n    message: \"\",\n    rfid: result.rfid || { ok: false, sensor: \"rfid\", error: \"missing\", message: \"RFID data was not collected.\" },\n    fingerprint: result.fingerprint || { ok: false, sensor: \"fingerprint\", matched: false, error: \"missing\", message: \"Fingerprint data was not collected.\" }\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 2680,
+        "y": 360,
+        "wires": [
+            [
+                "f1a2b3c4d5e6031e"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e6031e",
+        "type": "http response",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "",
+        "statusCode": "",
+        "headers": {},
+        "x": 2920,
+        "y": 360,
+        "wires": []
+    }
 ]

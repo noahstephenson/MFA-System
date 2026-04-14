@@ -59,7 +59,7 @@ def _parse_args():
     parser.add_argument(
         "--timeout",
         type=float,
-        default=10.0,
+        default=15.0,
         help="Seconds to wait for a card before returning a timeout error. Use 0 to wait forever.",
     )
     return parser.parse_args()
@@ -93,7 +93,9 @@ def _read_once(timeout_seconds):
     finally:
         if timer_enabled:
             signal.setitimer(signal.ITIMER_REAL, 0)
-            signal.signal(signal.SIGALRM, previous_handler)
+            if previous_handler is not None:
+                restore_handler = previous_handler.value if hasattr(previous_handler, "value") else previous_handler
+                signal.signal(signal.SIGALRM, restore_handler)
         if reader is not None:
             try:
                 GPIO.cleanup()

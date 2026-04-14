@@ -85,7 +85,9 @@ def _write_once(text, timeout_seconds):
     finally:
         if timer_enabled:
             signal.setitimer(signal.ITIMER_REAL, 0)
-            signal.signal(signal.SIGALRM, previous_handler)
+            if previous_handler is not None:
+                restore_handler = previous_handler.value if hasattr(previous_handler, "value") else previous_handler
+                signal.signal(signal.SIGALRM, restore_handler)
         if reader is not None:
             try:
                 GPIO.cleanup()

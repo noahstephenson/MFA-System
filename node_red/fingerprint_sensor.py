@@ -74,7 +74,7 @@ class FingerprintSensor:
         self._finger = None
         self._lib = None
 
-    def verify(self, *, timeout_seconds=10.0, poll_interval=0.2):
+    def verify(self, *, timeout_seconds=20.0, poll_interval=0.2):
         finger = self.connect()
         lib = self._lib
         deadline = time.monotonic() + timeout_seconds if timeout_seconds and timeout_seconds > 0 else None
@@ -193,7 +193,7 @@ class FingerprintSensor:
             f"Fingerprint reset failed: {self._code_name(result)}.",
         )
 
-    def verify_status_payload(self, *, timeout_seconds=10.0):
+    def verify_status_payload(self, *, timeout_seconds=20.0):
         payload = self.verify(timeout_seconds=timeout_seconds)
         if payload.get("ok"):
             return _status_payload(

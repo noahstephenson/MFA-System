@@ -19,7 +19,7 @@ def _parse_args():
     parser.add_argument(
         "--timeout",
         type=float,
-        default=10.0,
+        default=20.0,
         help="Seconds to wait for a fingerprint before returning a timeout error. Use 0 to wait forever.",
     )
     parser.add_argument("--port", default="/dev/serial0", help="Fingerprint UART device.")

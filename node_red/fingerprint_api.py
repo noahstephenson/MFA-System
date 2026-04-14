@@ -52,7 +52,7 @@ def api_health():
 @app.route("/verify", methods=["POST"])
 def api_verify():
     payload = _json_body()
-    timeout_seconds = _timeout_value(payload, default=10.0)
+    timeout_seconds = _timeout_value(payload, default=20.0)
     try:
         with _sensor() as sensor:
             response = sensor.verify(timeout_seconds=timeout_seconds)
@@ -70,7 +70,7 @@ def api_verify():
 @app.route("/scan", methods=["GET", "POST"])
 def api_scan():
     payload = _json_body()
-    timeout_seconds = _timeout_value(payload, default=10.0)
+    timeout_seconds = _timeout_value(payload, default=20.0)
     try:
         with _sensor() as sensor:
             response = sensor.verify_status_payload(timeout_seconds=timeout_seconds)
