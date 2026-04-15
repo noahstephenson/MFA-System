@@ -1,41 +1,16 @@
-# Core Authentication API
+# Core Access API
 
-This app exposes a small JSON API for future external clients such as Node-RED.
-The API does not control system state on its own. Django remains the
-authoritative backend and system of record, and both the API and the simulation
-pages call the same service-layer logic.
+This Django MVP exposes one active JSON endpoint. Django remains the decision
+maker and system of record; Node-RED only collects the Pi-side factors and
+returns normalized JSON.
 
-## Response Shape
+## Endpoint
 
-Successful responses use this envelope:
+### `POST /api/access/start/`
 
-```json
-{
-  "ok": true,
-  "message": "Optional human-readable message.",
-  "data": {
-    "...": "payload"
-  }
-}
-```
-
-Validation and lookup failures use this envelope:
-
-```json
-{
-  "ok": false,
-  "message": "Request validation failed.",
-  "errors": {
-    "field_name": ["Error message."]
-  }
-}
-```
-
-## Endpoints
-
-### `POST /api/auth/start/`
-
-Start a new authentication session for a protected resource.
+Start a new access attempt, call the combined Node-RED factor collection
+endpoint, evaluate the returned RFID and fingerprint values against the enrolled
+credentials for the selected user, and persist the result.
 
 Example request:
 
@@ -48,37 +23,54 @@ Example request:
 ```
 
 Notes:
-- `user_id` is optional.
-- `policy_id` is optional. If omitted, the resource's first active policy is used.
+- `resource_id` is required.
+- `user_id` is required.
+- `policy_id` is optional. If omitted, Django uses the resource's first active
+  policy ordered by `id`.
+- If `MFA_API_SHARED_SECRET` is configured, callers must send `X-API-Key`.
 
-### `POST /api/auth/factor/`
+## Response Shape
 
-Submit one abstract authentication factor to an existing session.
-
-Example request:
+Successful responses use this envelope:
 
 ```json
 {
-  "session_id": 12,
-  "credential_type": "rfid",
-  "identifier": "CARD-1001"
+  "ok": true,
+  "message": "Authentication requirements satisfied. Access granted.",
+  "data": {
+    "session": {
+      "id": 12,
+      "user": "operator",
+      "resource": "Main Lab Door",
+      "policy": "Elevated Access",
+      "status": "approved",
+      "decision": "granted",
+      "required_factor_count": 2,
+      "accepted_factor_count": 2,
+      "remaining_factor_count": 0,
+      "submitted_factors": [],
+      "is_complete": true,
+      "is_access_granted": true,
+      "factor_collection_result": {},
+      "result_url": "http://127.0.0.1:8000/app/access/result/12/"
+    },
+    "node_red": {
+      "ok": true,
+      "error": "",
+      "message": ""
+    }
+  }
 }
 ```
 
-Notes:
-- The API accepts abstract factor values only. No hardware, MQTT, or device logic is implemented here.
-- The response includes whether the factor was accepted and the updated session state.
+Validation and auth failures use this envelope:
 
-### `GET /api/auth/session/<id>/`
-
-Return the current state of an authentication session for polling-style clients.
-
-Session payload highlights:
-- `status`
-- `decision`
-- `required_factor_count`
-- `accepted_factor_count`
-- `remaining_factor_count`
-- `is_complete`
-- `is_access_granted`
-- `submitted_factors`
+```json
+{
+  "ok": false,
+  "message": "Request validation failed.",
+  "errors": {
+    "field_name": ["Error message."]
+  }
+}
+```
