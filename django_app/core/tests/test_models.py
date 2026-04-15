@@ -27,10 +27,10 @@ class CoreModelTests(CoreTestDataMixin, TestCase):
             user=self.user,
         )
 
-        self.assertEqual(str(self.resource), "Server Room")
-        self.assertEqual(str(self.policy), "Server Room - Tier 1 Policy")
+        self.assertEqual(str(self.resource), "Demo ATAK Console")
+        self.assertEqual(str(self.policy), "Demo ATAK Console - Tier 1 Policy")
         self.assertEqual(str(self.rfid), "alice - RFID - Alice badge")
-        self.assertEqual(str(session), f"Session {session.pk} - Server Room - Pending")
+        self.assertEqual(str(session), f"Session {session.pk} - Demo ATAK Console - Pending")
         self.assertEqual(str(audit_event), "Info - session_started")
 
     def test_credential_belongs_to_user_and_resource_policy_relationship_is_available(self):

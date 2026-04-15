@@ -1,7 +1,13 @@
 from django import forms
 from django.contrib.auth import get_user_model
 
-from .models import AccessPolicy, ProtectedResource, normalize_access_tier, tier_requirement_definition
+from .models import (
+    AccessPolicy,
+    Credential,
+    ProtectedResource,
+    normalize_access_tier,
+    tier_requirement_definition,
+)
 
 User = get_user_model()
 
@@ -9,23 +15,23 @@ User = get_user_model()
 class AccessStartForm(forms.Form):
     user = forms.ModelChoiceField(
         queryset=User.objects.none(),
-        label="Subject",
-        help_text="Choose the enrolled subject for this access attempt.",
+        label="User",
+        help_text="Who is requesting access.",
     )
     resource = forms.ModelChoiceField(
         queryset=ProtectedResource.objects.none(),
-        label="Protected resource",
-        help_text="Choose the resource the operator is requesting access to.",
+        label="Resource",
+        help_text="Where access is being requested.",
     )
     tier = forms.ChoiceField(
         choices=AccessPolicy.Tier.choices,
-        label="Access tier",
-        help_text="Tier 1 requires RFID + fingerprint. Tier 2 and Tier 3 require RFID + knowledge factor.",
+        label="Tier",
+        help_text="Tier 1 uses RFID + fingerprint. Tier 2 and Tier 3 use RFID + PIN.",
     )
     knowledge_factor = forms.CharField(
         required=False,
         label="Knowledge factor",
-        help_text="Required for Tier 2 and Tier 3. For this MVP Django checks the value against the user's enrolled PIN/passcode credential.",
+        help_text="Required for Tier 2 and Tier 3.",
         widget=forms.PasswordInput(render_value=True),
         strip=True,
     )
@@ -53,3 +59,45 @@ class AccessStartForm(forms.Form):
                 "Provide the knowledge factor for Tier 2 and Tier 3 access attempts.",
             )
         return cleaned_data
+
+
+class EnrollmentForm(forms.Form):
+    user = forms.ModelChoiceField(
+        queryset=User.objects.none(),
+        label="User",
+        help_text="Choose the user who owns this credential.",
+    )
+    credential_type = forms.ChoiceField(
+        choices=Credential.CredentialType.choices,
+        label="Credential type",
+        help_text="RFID uses a UID, biometric uses a fingerprint ID, and PIN stores the Django-side knowledge factor.",
+    )
+    identifier = forms.CharField(
+        label="Identifier / value",
+        help_text="Enter the exact UID, fingerprint ID, or PIN value you want to store.",
+        strip=True,
+    )
+    label = forms.CharField(
+        required=False,
+        label="Label",
+        help_text="Optional friendly name, such as Alice badge or Ops fingerprint.",
+        strip=True,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["user"].queryset = User.objects.filter(is_active=True).order_by("username")
+        self.fields["user"].empty_label = None
+
+    def clean_credential_type(self):
+        credential_type = str(self.cleaned_data.get("credential_type") or "").strip()
+        valid_types = {value for value, _label in Credential.CredentialType.choices}
+        if credential_type not in valid_types:
+            raise forms.ValidationError("Select a valid credential type.")
+        return credential_type
+
+    def clean_identifier(self):
+        identifier = str(self.cleaned_data.get("identifier") or "").strip()
+        if not identifier:
+            raise forms.ValidationError("Enter the credential identifier or value.")
+        return identifier

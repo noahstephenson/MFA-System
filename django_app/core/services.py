@@ -83,6 +83,14 @@ def _get_tier_or_error(tier):
     return normalized_tier
 
 
+def _get_credential_type_or_error(credential_type):
+    normalized_type = str(credential_type or "").strip()
+    valid_types = {value for value, _label in Credential.CredentialType.choices}
+    if normalized_type not in valid_types:
+        raise _validation_error("Select a valid credential type.", field="credential_type")
+    return normalized_type
+
+
 def _tier_label(tier):
     normalized_tier = normalize_access_tier(tier)
     return dict(AccessPolicy.Tier.choices).get(normalized_tier, normalized_tier or "Unknown")
@@ -520,6 +528,75 @@ def _finalize_session(session, factor_result, *, knowledge_factor="", request_pr
     )
 
     return session, details["result_message"]
+
+
+@transaction.atomic
+def enroll_credential(
+    *,
+    user_id,
+    credential_type,
+    identifier,
+    label="",
+    metadata=None,
+    request_provenance=None,
+):
+    user = _get_user_or_error(user_id)
+    normalized_type = _get_credential_type_or_error(credential_type)
+    normalized_identifier = str(identifier or "").strip()
+    normalized_label = str(label or "").strip()
+
+    if not normalized_identifier:
+        raise _validation_error("Enter the credential identifier or value.", field="identifier")
+
+    credential, created = Credential.objects.get_or_create(
+        user=user,
+        credential_type=normalized_type,
+        identifier=normalized_identifier,
+        defaults={
+            "label": normalized_label,
+            "active": True,
+            "metadata": metadata or {},
+        },
+    )
+
+    updated_fields = []
+    if not created:
+        if normalized_label and credential.label != normalized_label:
+            credential.label = normalized_label
+            updated_fields.append("label")
+        if not credential.active:
+            credential.active = True
+            updated_fields.append("active")
+        if metadata is not None and credential.metadata != metadata:
+            credential.metadata = metadata
+            updated_fields.append("metadata")
+        if updated_fields:
+            credential.save(update_fields=[*updated_fields, "updated_at"])
+
+    event_type = "credential_enrolled" if created else "credential_updated"
+    message = (
+        f"{credential.get_credential_type_display()} credential enrolled for {user.username}."
+        if created
+        else f"{credential.get_credential_type_display()} credential updated for {user.username}."
+    )
+    create_audit_event(
+        event_type,
+        message,
+        user=user,
+        details=_merge_request_provenance(
+            {
+                "credential_id": credential.id,
+                "credential_type": credential.credential_type,
+            },
+            request_provenance,
+        ),
+    )
+
+    return {
+        "credential": credential,
+        "created": created,
+        "message": message,
+    }
 
 
 @transaction.atomic

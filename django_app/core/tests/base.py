@@ -11,13 +11,13 @@ class CoreTestDataMixin:
         self.user = User.objects.create_user(username="alice", password="password123")
 
         self.resource = ProtectedResource.objects.create(
-            name="Server Room",
-            description="Restricted access room.",
+            name="Demo ATAK Console",
+            description="Primary demo ATAK resource.",
             allow_degraded_access=False,
         )
         self.degraded_resource = ProtectedResource.objects.create(
-            name="Operations Console",
-            description="Mission continuity console.",
+            name="Mission Continuity Console",
+            description="Approved degraded-mode console.",
             allow_degraded_access=True,
         )
 

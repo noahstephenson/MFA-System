@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from ..models import AuditEvent, AuthenticationSession, Credential, ProtectedResource
-from ..services import run_node_red_access_attempt, start_authentication_session
+from ..services import enroll_credential, run_node_red_access_attempt, start_authentication_session
 from .base import CoreTestDataMixin
 
 
@@ -608,4 +608,46 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
                 resource_id=other_resource.id,
                 user_id=self.user.id,
                 tier=self.tier1_policy.tier,
+            )
+
+    def test_enroll_credential_creates_new_entry(self):
+        result = enroll_credential(
+            user_id=self.user.id,
+            credential_type=Credential.CredentialType.RFID,
+            identifier="CARD-2002",
+            label="Spare ATAK badge",
+        )
+
+        credential = result["credential"]
+        self.assertTrue(result["created"])
+        self.assertEqual(credential.identifier, "CARD-2002")
+        self.assertEqual(credential.label, "Spare ATAK badge")
+        self.assertTrue(credential.active)
+        self.assertEqual(
+            AuditEvent.objects.filter(event_type="credential_enrolled", user=self.user).count(),
+            1,
+        )
+
+    def test_enroll_credential_reactivates_existing_entry(self):
+        self.rfid.active = False
+        self.rfid.save(update_fields=["active", "updated_at"])
+
+        result = enroll_credential(
+            user_id=self.user.id,
+            credential_type=Credential.CredentialType.RFID,
+            identifier=self.rfid.identifier,
+            label="Primary ATAK badge",
+        )
+
+        self.rfid.refresh_from_db()
+        self.assertFalse(result["created"])
+        self.assertTrue(self.rfid.active)
+        self.assertEqual(self.rfid.label, "Primary ATAK badge")
+
+    def test_enroll_credential_rejects_invalid_type(self):
+        with self.assertRaises(ValidationError):
+            enroll_credential(
+                user_id=self.user.id,
+                credential_type="mystery",
+                identifier="1234",
             )

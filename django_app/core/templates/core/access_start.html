@@ -1,44 +1,115 @@
 {% extends "core/base.html" %}
 
-{% block title %}Start Access | MFA Prototype{% endblock title %}
+{% block title %}Access | MFA Prototype{% endblock title %}
 
 {% block content %}
-<section class="panel">
-    <h1 style="margin-top: 0;">Start access attempt</h1>
-    <p class="muted">
-        Django receives the access request, collects Node-RED factors, verifies
-        the tier-required evidence, authorizes the requested resource, and
-        records the audit trail.
-    </p>
+<section class="panel hero">
+    <div class="hero-copy">
+        <div class="eyebrow">Access</div>
+        <h1>Start access request</h1>
+        <p class="muted">Select a user, resource, and tier. Django handles the decision; Node-RED only collects hardware factors.</p>
+    </div>
+    <div class="actions">
+        <a class="button secondary" href="{% url 'core:enroll' %}">Enroll Credentials</a>
+    </div>
 </section>
 
-<section class="panel">
-    <form method="post" action="{% url 'core:access-start' %}">
-        {% csrf_token %}
-        {{ form.non_field_errors }}
-        <div class="form-grid">
-            {% for field in form %}
-                <div class="form-field">
-                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-                    {{ field }}
-                    {% if field.help_text %}
-                        <div class="muted" style="margin-top: 0.35rem;">{{ field.help_text }}</div>
-                    {% endif %}
-                    {{ field.errors }}
-                </div>
+<div class="split-layout">
+    <section class="panel">
+        <form method="post" action="{% url 'core:access-start' %}">
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+            <div class="form-grid">
+                {% for field in form %}
+                    <div class="form-field">
+                        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.help_text %}
+                            <div class="muted" style="margin-top: 0.35rem;">{{ field.help_text }}</div>
+                        {% endif %}
+                        {{ field.errors }}
+                    </div>
+                {% endfor %}
+            </div>
+            <div class="actions" style="margin-top: 1rem;">
+                <button type="submit">Run Access Attempt</button>
+            </div>
+        </form>
+    </section>
+
+    <aside class="panel">
+        <div class="eyebrow">Factor status</div>
+        <h2 style="margin-top: 0;">What this tier needs</h2>
+        <p class="muted" id="tier-note">{{ tier_note }}</p>
+        <div class="factor-grid" id="factor-grid">
+            {% for card in factor_cards %}
+                <article class="factor-card {{ card.state }}" data-factor-key="{{ card.key }}">
+                    <div class="factor-top">
+                        <div>
+                            <h3>{{ card.label }}</h3>
+                            <div class="muted">{{ card.source }}</div>
+                        </div>
+                        <span class="pill {{ card.state }}" data-role="status">{{ card.status }}</span>
+                    </div>
+                    <p class="muted" data-role="detail" style="margin-bottom: 0;">{{ card.detail }}</p>
+                </article>
             {% endfor %}
         </div>
-        <div class="actions" style="margin-top: 1rem;">
-            <button type="submit">Run Access Attempt</button>
-            <a class="button secondary" href="{% url 'admin:index' %}">Open Admin</a>
+        <div class="callout info" style="margin-top: 1rem;">
+            <strong>Node-RED endpoint</strong>
+            <div class="muted"><code>{{ node_red_base_url }}/api/auth/collect-factors</code></div>
         </div>
-    </form>
-</section>
+    </aside>
+</div>
 
-<section class="panel">
-    <h2 style="margin-top: 0;">Node-RED expectation</h2>
-    <p class="muted">
-        Django is configured to call <code>{{ node_red_base_url }}/api/auth/collect-factors</code> for RFID and fingerprint only. Tier 2 and Tier 3 knowledge-factor checks stay inside Django.
-    </p>
-</section>
+<script>
+    (function () {
+        const tierField = document.getElementById("id_tier");
+        const noteElement = document.getElementById("tier-note");
+        const factorCards = document.querySelectorAll("[data-factor-key]");
+        if (!tierField || !noteElement || !factorCards.length) {
+            return;
+        }
+
+        const tierConfig = {
+            basic: {
+                note: "Tier 1 uses RFID plus fingerprint.",
+                rfid: { state: "neutral", status: "Required", detail: "Collected from the badge reader." },
+                biometric: { state: "neutral", status: "Required", detail: "Required for Tier 1." },
+                pin: { state: "muted", status: "Not used", detail: "Only used for Tier 2 and Tier 3." }
+            },
+            elevated: {
+                note: "Tier 2 uses RFID plus PIN/passcode.",
+                rfid: { state: "neutral", status: "Required", detail: "Collected from the badge reader." },
+                biometric: { state: "muted", status: "Not used", detail: "Ignored for Tier 2 and Tier 3." },
+                pin: { state: "neutral", status: "Required", detail: "Checked in Django after RFID." }
+            },
+            high: {
+                note: "Tier 3 uses RFID plus PIN/passcode and a degraded-approved resource.",
+                rfid: { state: "neutral", status: "Required", detail: "Collected from the badge reader." },
+                biometric: { state: "muted", status: "Not used", detail: "Ignored for Tier 2 and Tier 3." },
+                pin: { state: "neutral", status: "Required", detail: "Checked in Django after RFID." }
+            }
+        };
+
+        function applyTierState() {
+            const config = tierConfig[tierField.value] || tierConfig.basic;
+            noteElement.textContent = config.note;
+            factorCards.forEach((card) => {
+                const key = card.dataset.factorKey;
+                const factorConfig = config[key];
+                if (!factorConfig) {
+                    return;
+                }
+                card.className = "factor-card " + factorConfig.state;
+                card.querySelector("[data-role='status']").className = "pill " + factorConfig.state;
+                card.querySelector("[data-role='status']").textContent = factorConfig.status;
+                card.querySelector("[data-role='detail']").textContent = factorConfig.detail;
+            });
+        }
+
+        tierField.addEventListener("change", applyTierState);
+        applyTierState();
+    }());
+</script>
 {% endblock content %}
