@@ -599,6 +599,69 @@ def enroll_credential(
     }
 
 
+def capture_enrollment_identifier(
+    *,
+    user_id,
+    credential_type,
+    request_provenance=None,
+):
+    user = _get_user_or_error(user_id)
+    normalized_type = _get_credential_type_or_error(credential_type)
+
+    if normalized_type == Credential.CredentialType.RFID:
+        capture_result = node_red_client.read_rfid()
+        operator_label = "Badge"
+        identifier = str(capture_result.get("uid") or "").strip()
+    elif normalized_type == Credential.CredentialType.BIOMETRIC:
+        capture_result = node_red_client.enroll_fingerprint(
+            {
+                "user_id": user.id,
+                "username": user.username,
+            }
+        )
+        identifier = str(capture_result.get("finger_id") or "").strip()
+        operator_label = "Fingerprint"
+    else:
+        raise _validation_error(
+            "Live capture is only available for badge and fingerprint enrollment.",
+            field="credential_type",
+        )
+
+    capture_ok = bool(capture_result.get("ok")) and bool(identifier)
+    audit_message = (
+        f"{operator_label} captured for {user.username}."
+        if capture_ok
+        else f"{operator_label} capture failed for {user.username}."
+    )
+    create_audit_event(
+        "credential_capture_succeeded" if capture_ok else "credential_capture_failed",
+        audit_message,
+        user=user,
+        severity=AuditEvent.Severity.INFO if capture_ok else AuditEvent.Severity.WARNING,
+        details=_merge_request_provenance(
+            {
+                "credential_type": normalized_type,
+                "identifier": identifier,
+                "capture_ok": capture_ok,
+                "capture_error": str(capture_result.get("error") or ""),
+                "capture_message": str(capture_result.get("message") or ""),
+            },
+            request_provenance,
+        ),
+    )
+
+    return {
+        "ok": capture_ok,
+        "identifier": identifier,
+        "message": (
+            f"{operator_label} ready to save."
+            if capture_ok
+            else str(capture_result.get("message") or f"{operator_label} capture failed.")
+        ),
+        "capture_result": capture_result,
+    }
+
+
 @transaction.atomic
 def start_authentication_session(
     *,

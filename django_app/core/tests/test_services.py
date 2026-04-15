@@ -4,7 +4,12 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from ..models import AuditEvent, AuthenticationSession, Credential, ProtectedResource
-from ..services import enroll_credential, run_node_red_access_attempt, start_authentication_session
+from ..services import (
+    capture_enrollment_identifier,
+    enroll_credential,
+    run_node_red_access_attempt,
+    start_authentication_session,
+)
 from .base import CoreTestDataMixin
 
 
@@ -644,10 +649,59 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
         self.assertTrue(self.rfid.active)
         self.assertEqual(self.rfid.label, "Primary ATAK badge")
 
+    @patch("core.services.node_red_client.read_rfid")
+    def test_capture_enrollment_identifier_reads_badge_from_node_red(self, mock_read_rfid):
+        mock_read_rfid.return_value = {
+            "ok": True,
+            "sensor": "rfid",
+            "uid": "CARD-4004",
+            "message": "",
+        }
+
+        result = capture_enrollment_identifier(
+            user_id=self.user.id,
+            credential_type=Credential.CredentialType.RFID,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["identifier"], "CARD-4004")
+        self.assertEqual(
+            AuditEvent.objects.filter(event_type="credential_capture_succeeded", user=self.user).count(),
+            1,
+        )
+
+    @patch("core.services.node_red_client.enroll_fingerprint")
+    def test_capture_enrollment_identifier_reads_fingerprint_from_node_red(self, mock_enroll_fingerprint):
+        mock_enroll_fingerprint.return_value = {
+            "ok": True,
+            "sensor": "fingerprint",
+            "finger_id": 9,
+            "message": "",
+        }
+
+        result = capture_enrollment_identifier(
+            user_id=self.user.id,
+            credential_type=Credential.CredentialType.BIOMETRIC,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["identifier"], "9")
+        self.assertEqual(
+            AuditEvent.objects.filter(event_type="credential_capture_succeeded", user=self.user).count(),
+            1,
+        )
+
     def test_enroll_credential_rejects_invalid_type(self):
         with self.assertRaises(ValidationError):
             enroll_credential(
                 user_id=self.user.id,
                 credential_type="mystery",
                 identifier="1234",
+            )
+
+    def test_capture_enrollment_identifier_rejects_pin_capture(self):
+        with self.assertRaises(ValidationError):
+            capture_enrollment_identifier(
+                user_id=self.user.id,
+                credential_type=Credential.CredentialType.PIN,
             )

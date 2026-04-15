@@ -5,9 +5,14 @@ from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
 
-from .forms import AccessStartForm, EnrollmentForm
-from .models import AccessPolicy, Credential, ProtectedResource, normalize_access_tier, tier_requirement_definition
-from .services import enroll_credential, get_authentication_session, run_node_red_access_attempt
+from .forms import AccessStartForm, CapturedCredentialForm, PinEnrollmentForm, UserSelectionForm
+from .models import AccessPolicy, Credential, normalize_access_tier, tier_requirement_definition
+from .services import (
+    capture_enrollment_identifier,
+    enroll_credential,
+    get_authentication_session,
+    run_node_red_access_attempt,
+)
 
 User = get_user_model()
 
@@ -58,7 +63,7 @@ def _tier_note(selected_tier):
     notes = {
         AccessPolicy.Tier.BASIC: "Tier 1: Badge + Fingerprint",
         AccessPolicy.Tier.ELEVATED: "Tier 2: Badge + PIN",
-        AccessPolicy.Tier.HIGH: "Tier 3: Badge + PIN + Degraded resource only",
+        AccessPolicy.Tier.HIGH: "Tier 3: Badge + PIN + approved degraded resource",
     }
     return notes.get(selected_tier, "Select a tier to see the required factors.")
 
@@ -69,17 +74,89 @@ def _operator_message(message):
         return ""
 
     rewrites = {
+        "Authentication evidence satisfied the selected tier requirements.": "Identity confirmed.",
+        "Authentication succeeded and access was authorized.": "Access approved.",
+        "Authentication failed.": "Identity check failed.",
+        "Authorization denied because authentication failed.": "Access stopped because identity check failed.",
+        "Authorization granted for the selected resource.": "Resource approved.",
+        "Tier 3 degraded access is approved for the selected resource.": "Resource approved for Tier 3 access.",
+        "Selected resource is not approved for Tier 3 degraded access.": "Resource is not approved for Tier 3 access.",
+        "Knowledge factor is required for this tier.": "PIN is required for this tier.",
+        "Knowledge factor did not match the enrolled credential.": "PIN did not match.",
+        "Node-RED factor collection failed.": "Factor service unavailable.",
+        "Node-RED returned factor collection results.": "Factors received.",
+        "Node-RED returned factor collection results with errors.": "Factors received with errors.",
         "Node-RED request timed out.": "Factor service timed out.",
         "Node-RED returned an invalid factor payload.": "Factor data was incomplete.",
         "Node-RED did not return any factor data.": "No factor data was returned.",
+        "RFID credential is not enrolled for this user.": "Badge is not enrolled for this person.",
         "RFID data was not collected.": "Badge scan unavailable.",
         "RFID data was not returned.": "Badge scan unavailable.",
+        "Fingerprint credential is not enrolled for this user.": "Fingerprint is not enrolled for this person.",
         "Fingerprint data was not returned.": "Fingerprint result unavailable.",
     }
     if cleaned in rewrites:
         return rewrites[cleaned]
 
-    return cleaned.replace("Node-RED", "Factor service").replace("RFID", "Badge")
+    return (
+        cleaned.replace("Node-RED", "Factor service")
+        .replace("RFID", "Badge")
+        .replace("Knowledge factor", "PIN")
+    )
+
+
+def _credential_type_label(credential_type):
+    return {
+        Credential.CredentialType.RFID: "Badge",
+        Credential.CredentialType.BIOMETRIC: "Fingerprint",
+        Credential.CredentialType.PIN: "PIN",
+    }.get(credential_type, "Credential")
+
+
+def _credential_saved_message(credential, *, created):
+    action = "saved" if created else "updated"
+    return f"{_credential_type_label(credential.credential_type)} {action} for {credential.user.username}."
+
+
+def _selected_user_from_value(raw_user_id):
+    if not str(raw_user_id).isdigit():
+        return None
+    return User.objects.filter(id=int(raw_user_id), is_active=True).first()
+
+
+def _selected_user_from_request(request):
+    return _selected_user_from_value(request.POST.get("user", "")) or _selected_user_from_value(
+        request.GET.get("user", "")
+    )
+
+
+def _initial_user_value(selected_user):
+    return {"user": selected_user.id} if selected_user is not None else {}
+
+
+def _capture_preview(credential_type, *, ok=None, identifier="", message=""):
+    normalized_identifier = str(identifier or "").strip()
+    if ok is True and normalized_identifier:
+        prefix = "UID" if credential_type == Credential.CredentialType.RFID else "ID"
+        return {
+            "state": "success",
+            "status": "Ready to save",
+            "detail": f"{prefix} {normalized_identifier}",
+        }
+    if ok is False and message:
+        return {
+            "state": "error",
+            "status": "Capture failed",
+            "detail": _operator_message(message) or "Capture failed.",
+        }
+    if normalized_identifier:
+        prefix = "UID" if credential_type == Credential.CredentialType.RFID else "ID"
+        return {
+            "state": "success",
+            "status": "Ready to save",
+            "detail": f"{prefix} {normalized_identifier}",
+        }
+    return None
 
 
 def _access_factor_cards(selected_tier):
@@ -90,7 +167,7 @@ def _access_factor_cards(selected_tier):
             "label": "Badge",
             "state": "neutral",
             "status": "Pending",
-            "detail": "Required",
+            "detail": "Scan badge",
         },
         {
             "key": "biometric",
@@ -99,7 +176,7 @@ def _access_factor_cards(selected_tier):
             "status": "Pending"
             if Credential.CredentialType.BIOMETRIC in required_factor_types
             else "Not Required",
-            "detail": "Required"
+            "detail": "Capture fingerprint"
             if Credential.CredentialType.BIOMETRIC in required_factor_types
             else "Not required",
         },
@@ -111,19 +188,6 @@ def _access_factor_cards(selected_tier):
             "detail": "Enter PIN" if Credential.CredentialType.PIN in required_factor_types else "Not required",
         },
     ]
-
-
-def _selected_user_for_enrollment(request, form):
-    raw_user_id = ""
-    if form.is_bound:
-        raw_user_id = form.data.get("user", "")
-    else:
-        raw_user_id = request.GET.get("user", "") or form.initial.get("user", "")
-
-    if not str(raw_user_id).isdigit():
-        return None
-
-    return User.objects.filter(id=int(raw_user_id), is_active=True).first()
 
 
 def _factor_cards_for_result(session, factor_collection_result, authentication_result):
@@ -156,9 +220,11 @@ def _factor_cards_for_result(session, factor_collection_result, authentication_r
                 "label": "Badge",
                 "state": "error",
                 "status": "Failed",
-                "detail": submitted_factors.get(Credential.CredentialType.RFID, {}).get("reason_message")
-                or rfid_result.get("message")
-                or "Badge scan not available.",
+                "detail": _operator_message(
+                    submitted_factors.get(Credential.CredentialType.RFID, {}).get("reason_message")
+                    or rfid_result.get("message")
+                    or "Badge scan not available."
+                ),
             }
         )
 
@@ -169,7 +235,7 @@ def _factor_cards_for_result(session, factor_collection_result, authentication_r
                     "label": "Fingerprint",
                     "state": "success",
                     "status": "Accepted",
-                    "detail": f"Fingerprint ID {fingerprint_result.get('finger_id', 'unknown')}",
+                    "detail": f"ID {fingerprint_result.get('finger_id', 'unknown')}",
                 }
             )
         else:
@@ -178,9 +244,11 @@ def _factor_cards_for_result(session, factor_collection_result, authentication_r
                     "label": "Fingerprint",
                     "state": "error",
                     "status": "Failed",
-                    "detail": submitted_factors.get(Credential.CredentialType.BIOMETRIC, {}).get("reason_message")
-                    or fingerprint_result.get("message")
-                    or "Fingerprint not available.",
+                    "detail": _operator_message(
+                        submitted_factors.get(Credential.CredentialType.BIOMETRIC, {}).get("reason_message")
+                        or fingerprint_result.get("message")
+                        or "Fingerprint not available."
+                    ),
                 }
             )
     else:
@@ -200,7 +268,7 @@ def _factor_cards_for_result(session, factor_collection_result, authentication_r
                     "label": "PIN",
                     "state": "success",
                     "status": "Accepted",
-                    "detail": "PIN accepted",
+                    "detail": "Accepted",
                 }
             )
         else:
@@ -209,8 +277,7 @@ def _factor_cards_for_result(session, factor_collection_result, authentication_r
                     "label": "PIN",
                     "state": "error",
                     "status": "Failed",
-                    "detail": knowledge_submission.get("reason_message")
-                    or "PIN not accepted.",
+                    "detail": _operator_message(knowledge_submission.get("reason_message") or "PIN not accepted."),
                 }
             )
     else:
@@ -254,10 +321,10 @@ def _operator_audit_entries(audit_events):
         "session_started": "Request",
         "factor_collection_completed": "Factors",
         "factor_collection_failed": "Factors",
-        "authentication_succeeded": "Authentication",
-        "authentication_failed": "Authentication",
-        "authorization_granted": "Authorization",
-        "authorization_denied": "Authorization",
+        "authentication_succeeded": "Identity",
+        "authentication_failed": "Identity",
+        "authorization_granted": "Resource",
+        "authorization_denied": "Resource",
         "access_granted": "Decision",
         "access_denied": "Decision",
     }
@@ -273,12 +340,7 @@ def _operator_audit_entries(audit_events):
 
 
 def home(request):
-    context = {
-        "active_user_count": User.objects.filter(is_active=True).count(),
-        "active_resource_count": ProtectedResource.objects.filter(active=True).count(),
-        "active_credential_count": Credential.objects.filter(active=True).count(),
-    }
-    return render(request, "core/home.html", context)
+    return render(request, "core/home.html", {"nav_key": "home"})
 
 
 def access_start(request):
@@ -298,7 +360,7 @@ def access_start(request):
             _add_form_errors(form, exc)
         else:
             level = messages.SUCCESS if result["session"].is_access_granted else messages.WARNING
-            messages.add_message(request, level, result["message"])
+            messages.add_message(request, level, _operator_message(result["message"]))
             return redirect("core:access-result", session_id=result["session"].id)
 
     return render(
@@ -306,6 +368,7 @@ def access_start(request):
         "core/access_start.html",
         {
             "form": form,
+            "nav_key": "access",
             "selected_tier": selected_tier,
             "tier_note": _tier_note(selected_tier),
             "factor_cards": _access_factor_cards(selected_tier),
@@ -319,17 +382,21 @@ def access_result(request, session_id):
     factor_collection_result = (session.details or {}).get("factor_collection_result") or {}
     authentication_result = (session.details or {}).get("authentication_result") or {}
     authorization_result = (session.details or {}).get("authorization_result") or {}
+    authentication_note = _operator_message(authentication_result.get("message"))
+    authorization_note = _operator_message(authorization_result.get("message"))
     result_message = _operator_message((session.details or {}).get("result_message")) or "Access attempt completed."
     return render(
         request,
         "core/access_result.html",
         {
             "session": session,
+            "nav_key": "access",
             "audit_entries": _operator_audit_entries(audit_events),
-            "factor_collection_result": factor_collection_result,
-            "collection_summary": _operator_collection_summary(factor_collection_result),
             "authentication_result": authentication_result,
+            "authentication_note": authentication_note,
             "authorization_result": authorization_result,
+            "authorization_note": authorization_note,
+            "decision_note": authorization_note if authentication_result.get("ok") else authentication_note,
             "factor_cards": _factor_cards_for_result(session, factor_collection_result, authentication_result),
             "result_message": result_message,
         },
@@ -337,29 +404,145 @@ def access_result(request, session_id):
 
 
 def enroll(request):
-    initial = {}
-    selected_user_id = request.GET.get("user", "").strip()
-    if selected_user_id.isdigit():
-        initial["user"] = int(selected_user_id)
+    selected_user = _selected_user_from_request(request)
+    badge_capture = None
+    fingerprint_capture = None
 
-    form = EnrollmentForm(request.POST or None, initial=initial)
+    user_select_form = UserSelectionForm(initial=_initial_user_value(selected_user))
+    badge_save_form = CapturedCredentialForm(initial=_initial_user_value(selected_user))
+    fingerprint_save_form = CapturedCredentialForm(initial=_initial_user_value(selected_user))
+    pin_form = PinEnrollmentForm(initial=_initial_user_value(selected_user))
 
-    if request.method == "POST" and form.is_valid():
-        try:
-            result = enroll_credential(
-                user_id=form.cleaned_data["user"].id,
-                credential_type=form.cleaned_data["credential_type"],
-                identifier=form.cleaned_data["identifier"],
-                label=form.cleaned_data.get("label", ""),
-                request_provenance=_request_provenance(request, channel="html"),
+    if request.method == "POST":
+        action = str(request.POST.get("action") or "").strip()
+        if action and selected_user is None:
+            messages.warning(request, "Choose a person first.")
+        elif action == "capture-rfid":
+            try:
+                capture_result = capture_enrollment_identifier(
+                    user_id=selected_user.id,
+                    credential_type=Credential.CredentialType.RFID,
+                    request_provenance=_request_provenance(request, channel="html"),
+                )
+            except ValidationError as exc:
+                badge_capture = _capture_preview(
+                    Credential.CredentialType.RFID,
+                    ok=False,
+                    message=exc.messages[0],
+                )
+            else:
+                badge_capture = _capture_preview(
+                    Credential.CredentialType.RFID,
+                    ok=capture_result["ok"],
+                    identifier=capture_result["identifier"],
+                    message=capture_result["message"],
+                )
+                if capture_result["ok"]:
+                    badge_save_form = CapturedCredentialForm(
+                        initial={
+                            **_initial_user_value(selected_user),
+                            "captured_identifier": capture_result["identifier"],
+                        }
+                    )
+        elif action == "save-rfid":
+            badge_save_form = CapturedCredentialForm(request.POST)
+            if badge_save_form.is_valid():
+                try:
+                    result = enroll_credential(
+                        user_id=badge_save_form.cleaned_data["user"].id,
+                        credential_type=Credential.CredentialType.RFID,
+                        identifier=badge_save_form.cleaned_data["captured_identifier"],
+                        label=badge_save_form.cleaned_data.get("label", ""),
+                        request_provenance=_request_provenance(request, channel="html"),
+                    )
+                except ValidationError as exc:
+                    _add_form_errors(badge_save_form, exc)
+                else:
+                    messages.success(
+                        request,
+                        _credential_saved_message(result["credential"], created=result["created"]),
+                    )
+                    return redirect(f"{reverse('core:enroll')}?user={result['credential'].user_id}")
+            else:
+                if not str(request.POST.get("captured_identifier") or "").strip():
+                    messages.warning(request, "Scan the badge before saving.")
+            badge_capture = _capture_preview(
+                Credential.CredentialType.RFID,
+                identifier=request.POST.get("captured_identifier", ""),
             )
-        except ValidationError as exc:
-            _add_form_errors(form, exc)
-        else:
-            messages.success(request, result["message"])
-            return redirect(f"{reverse('core:enroll')}?user={result['credential'].user_id}")
+        elif action == "capture-fingerprint":
+            try:
+                capture_result = capture_enrollment_identifier(
+                    user_id=selected_user.id,
+                    credential_type=Credential.CredentialType.BIOMETRIC,
+                    request_provenance=_request_provenance(request, channel="html"),
+                )
+            except ValidationError as exc:
+                fingerprint_capture = _capture_preview(
+                    Credential.CredentialType.BIOMETRIC,
+                    ok=False,
+                    message=exc.messages[0],
+                )
+            else:
+                fingerprint_capture = _capture_preview(
+                    Credential.CredentialType.BIOMETRIC,
+                    ok=capture_result["ok"],
+                    identifier=capture_result["identifier"],
+                    message=capture_result["message"],
+                )
+                if capture_result["ok"]:
+                    fingerprint_save_form = CapturedCredentialForm(
+                        initial={
+                            **_initial_user_value(selected_user),
+                            "captured_identifier": capture_result["identifier"],
+                        }
+                    )
+        elif action == "save-fingerprint":
+            fingerprint_save_form = CapturedCredentialForm(request.POST)
+            if fingerprint_save_form.is_valid():
+                try:
+                    result = enroll_credential(
+                        user_id=fingerprint_save_form.cleaned_data["user"].id,
+                        credential_type=Credential.CredentialType.BIOMETRIC,
+                        identifier=fingerprint_save_form.cleaned_data["captured_identifier"],
+                        label=fingerprint_save_form.cleaned_data.get("label", ""),
+                        request_provenance=_request_provenance(request, channel="html"),
+                    )
+                except ValidationError as exc:
+                    _add_form_errors(fingerprint_save_form, exc)
+                else:
+                    messages.success(
+                        request,
+                        _credential_saved_message(result["credential"], created=result["created"]),
+                    )
+                    return redirect(f"{reverse('core:enroll')}?user={result['credential'].user_id}")
+            else:
+                if not str(request.POST.get("captured_identifier") or "").strip():
+                    messages.warning(request, "Capture the fingerprint before saving.")
+            fingerprint_capture = _capture_preview(
+                Credential.CredentialType.BIOMETRIC,
+                identifier=request.POST.get("captured_identifier", ""),
+            )
+        elif action == "save-pin":
+            pin_form = PinEnrollmentForm(request.POST)
+            if pin_form.is_valid():
+                try:
+                    result = enroll_credential(
+                        user_id=pin_form.cleaned_data["user"].id,
+                        credential_type=Credential.CredentialType.PIN,
+                        identifier=pin_form.cleaned_data["pin"],
+                        label=pin_form.cleaned_data.get("label", ""),
+                        request_provenance=_request_provenance(request, channel="html"),
+                    )
+                except ValidationError as exc:
+                    _add_form_errors(pin_form, exc)
+                else:
+                    messages.success(
+                        request,
+                        _credential_saved_message(result["credential"], created=result["created"]),
+                    )
+                    return redirect(f"{reverse('core:enroll')}?user={result['credential'].user_id}")
 
-    selected_user = _selected_user_for_enrollment(request, form)
     selected_credentials = (
         Credential.objects.filter(user=selected_user).order_by("credential_type", "label", "identifier")
         if selected_user is not None
@@ -370,8 +553,14 @@ def enroll(request):
         request,
         "core/enroll.html",
         {
-            "form": form,
+            "badge_capture": badge_capture,
+            "badge_save_form": badge_save_form,
+            "fingerprint_capture": fingerprint_capture,
+            "fingerprint_save_form": fingerprint_save_form,
+            "nav_key": "enroll",
+            "pin_form": pin_form,
             "selected_user": selected_user,
             "selected_credentials": selected_credentials,
+            "user_select_form": user_select_form,
         },
     )

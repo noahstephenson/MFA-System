@@ -2,65 +2,66 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>{% block title %}Access Control{% endblock title %}</title>
+    <title>{% block title %}MFA Operator{% endblock title %}</title>
     <style>
         :root {
-            --bg: #eef3f7;
+            --bg: #edf2f7;
             --surface: #ffffff;
-            --surface-soft: #f7fafc;
-            --border: #d5dee7;
-            --ink: #17324d;
-            --muted: #5b6875;
-            --accent: #16456c;
-            --accent-strong: #0f2f4a;
-            --accent-soft: #dce9f5;
-            --success-soft: #def3e6;
-            --warning-soft: #fff3cc;
-            --danger-soft: #f9dfdd;
-            --shadow: 0 16px 36px rgba(16, 35, 57, 0.08);
+            --surface-soft: #f6f9fc;
+            --border: #d2dce6;
+            --ink: #13293d;
+            --muted: #5f6f80;
+            --accent: #154a74;
+            --accent-strong: #0d314d;
+            --accent-soft: #e2edf6;
+            --success: #1f7a45;
+            --success-soft: #dff3e5;
+            --warning-soft: #fff1c9;
+            --danger: #b42318;
+            --danger-soft: #f8e0dd;
+            --shadow: 0 18px 38px rgba(15, 32, 50, 0.08);
         }
         * {
             box-sizing: border-box;
         }
         body {
             margin: 0;
-            font-family: "Segoe UI", Tahoma, sans-serif;
+            font-family: Aptos, "Segoe UI", sans-serif;
             background:
-                radial-gradient(circle at top, #f9fbfd 0%, var(--bg) 46%, #e7eef5 100%);
+                radial-gradient(circle at top, #fbfdff 0%, var(--bg) 46%, #e5edf4 100%);
             color: var(--ink);
         }
         header {
             background: linear-gradient(135deg, var(--accent-strong), var(--accent));
             color: #ffffff;
-            box-shadow: 0 12px 28px rgba(8, 27, 43, 0.22);
+            box-shadow: 0 14px 30px rgba(8, 27, 43, 0.18);
         }
         .header-shell,
         main {
-            max-width: 1120px;
+            max-width: 1080px;
             margin: 0 auto;
-            padding-left: 1.5rem;
-            padding-right: 1.5rem;
+            padding-left: 1.25rem;
+            padding-right: 1.25rem;
         }
         .header-shell {
-            padding-top: 1.1rem;
-            padding-bottom: 0.95rem;
+            padding-top: 1rem;
+            padding-bottom: 1rem;
         }
         .brand-row {
             display: flex;
             justify-content: space-between;
-            align-items: flex-end;
+            align-items: center;
             gap: 1rem;
             flex-wrap: wrap;
         }
         .brand-row h1 {
             margin: 0;
-            font-size: 1.8rem;
-            letter-spacing: 0.02em;
+            font-size: 1.55rem;
+            letter-spacing: 0.01em;
         }
         .tagline {
-            margin-top: 0.35rem;
-            color: rgba(255, 255, 255, 0.82);
-            max-width: 32rem;
+            margin-top: 0.3rem;
+            color: rgba(255, 255, 255, 0.8);
         }
         nav {
             margin-top: 0.95rem;
@@ -71,20 +72,26 @@
         nav a {
             color: #ffffff;
             text-decoration: none;
-            padding: 0.45rem 0.85rem;
+            padding: 0.48rem 0.9rem;
             border-radius: 999px;
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.16);
             background: rgba(255, 255, 255, 0.08);
+            font-weight: 600;
+        }
+        nav a.active {
+            background: #ffffff;
+            color: var(--accent-strong);
+            border-color: #ffffff;
         }
         main {
-            padding-top: 1.8rem;
+            padding-top: 1.6rem;
             padding-bottom: 3rem;
         }
         .panel {
             background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 1.15rem 1.2rem;
+            border-radius: 18px;
+            padding: 1.2rem 1.25rem;
             margin-bottom: 1rem;
             box-shadow: var(--shadow);
         }
@@ -96,40 +103,47 @@
             margin-top: 0;
             margin-bottom: 0.5rem;
         }
-        .hero {
+        .page-header {
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
+            align-items: flex-end;
             gap: 1rem;
             flex-wrap: wrap;
         }
-        .hero h1 {
+        .page-header h1 {
             margin: 0;
             font-size: 2rem;
+            line-height: 1.1;
         }
-        .hero-copy {
-            max-width: 40rem;
+        .lead {
+            max-width: 36rem;
+            margin: 0.55rem 0 0 0;
+            color: var(--muted);
+            font-size: 1rem;
         }
         .eyebrow {
             margin-bottom: 0.45rem;
             text-transform: uppercase;
-            letter-spacing: 0.09em;
-            font-size: 0.78rem;
+            letter-spacing: 0.1em;
+            font-size: 0.74rem;
             font-weight: 700;
             color: var(--muted);
         }
         .muted {
             color: var(--muted);
         }
-        .card-grid {
+        .action-grid,
+        .summary-grid,
+        .factor-grid,
+        .stats-grid {
             display: grid;
             gap: 1rem;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
         }
         .feature-card {
             display: block;
-            padding: 1.1rem;
-            border-radius: 16px;
+            padding: 1.2rem;
+            border-radius: 18px;
             border: 1px solid var(--border);
             background: linear-gradient(180deg, var(--surface), #fbfdff);
             box-shadow: var(--shadow);
@@ -137,26 +151,15 @@
             color: inherit;
         }
         .feature-card h2 {
-            margin: 0 0 0.4rem 0;
+            margin: 0 0 0.45rem 0;
         }
         .feature-card p {
             margin: 0;
         }
-        .split-layout {
+        .workflow-grid {
             display: grid;
             gap: 1rem;
             grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
-        }
-        .stats {
-            display: grid;
-            gap: 1rem;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        }
-        .stat-value {
-            margin-top: 0.35rem;
-            font-size: 1.7rem;
-            font-weight: 700;
-            color: var(--accent);
         }
         .messages {
             list-style: none;
@@ -164,8 +167,8 @@
             margin: 0 0 1rem 0;
         }
         .messages li {
-            padding: 0.8rem 1rem;
-            border-radius: 12px;
+            padding: 0.82rem 1rem;
+            border-radius: 14px;
             margin-bottom: 0.75rem;
             box-shadow: var(--shadow);
         }
@@ -185,6 +188,12 @@
             display: grid;
             gap: 1rem;
         }
+        .inline-form {
+            display: flex;
+            gap: 0.85rem;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
         .form-field label {
             display: block;
             font-weight: 700;
@@ -194,14 +203,21 @@
         .form-field select,
         .form-field textarea {
             width: 100%;
-            padding: 0.7rem;
+            padding: 0.72rem 0.78rem;
             border: 1px solid #bcccdc;
-            border-radius: 10px;
+            border-radius: 12px;
             background: var(--surface-soft);
             color: var(--ink);
+            font: inherit;
+        }
+        .form-field input:focus,
+        .form-field select:focus,
+        .form-field textarea:focus {
+            outline: 2px solid rgba(21, 74, 116, 0.16);
+            border-color: var(--accent);
         }
         .errorlist {
-            color: #b42318;
+            color: var(--danger);
             margin: 0.35rem 0 0 0;
             padding-left: 1rem;
         }
@@ -215,16 +231,22 @@
             background: var(--accent);
             color: #ffffff;
             border: 0;
-            border-radius: 10px;
-            padding: 0.72rem 1rem;
+            border-radius: 12px;
+            padding: 0.74rem 1rem;
             cursor: pointer;
             text-decoration: none;
             display: inline-block;
             font-weight: 700;
+            font: inherit;
         }
         .button.secondary,
         button.secondary {
-            background: #62798e;
+            background: #5f7080;
+        }
+        .button:disabled,
+        button:disabled {
+            background: #a8b7c4;
+            cursor: not-allowed;
         }
         .detail-list {
             list-style: none;
@@ -243,9 +265,15 @@
             letter-spacing: 0.06em;
             margin-bottom: 0.15rem;
         }
+        .status-note,
         .callout {
             border-radius: 14px;
             padding: 1rem 1.05rem;
+        }
+        .status-note {
+            background: var(--accent-soft);
+            margin-bottom: 1rem;
+            font-weight: 600;
         }
         .callout.success {
             background: var(--success-soft);
@@ -256,14 +284,9 @@
         .callout.info {
             background: var(--accent-soft);
         }
-        .factor-grid {
-            display: grid;
-            gap: 0.85rem;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        }
         .factor-card {
             border-radius: 14px;
-            padding: 0.95rem 1rem;
+            padding: 1rem;
             border: 1px solid var(--border);
             background: var(--surface-soft);
         }
@@ -293,6 +316,9 @@
             margin: 0;
             font-size: 1rem;
         }
+        .factor-card p {
+            margin: 0.75rem 0 0 0;
+        }
         .pill {
             display: inline-block;
             padding: 0.22rem 0.6rem;
@@ -303,13 +329,34 @@
             color: var(--ink);
         }
         .pill.success {
-            background: #b9e4c7;
+            background: #bae7c7;
+            color: var(--success);
         }
         .pill.error {
             background: #efc1bd;
+            color: var(--danger);
         }
         .pill.muted {
             background: #e0e7ef;
+        }
+        .readout {
+            margin-top: 0.9rem;
+            padding: 0.85rem 0.95rem;
+            border-radius: 14px;
+            border: 1px solid var(--border);
+            background: var(--surface-soft);
+        }
+        .readout.success {
+            background: var(--success-soft);
+            border-color: #95c7a6;
+        }
+        .readout.error {
+            background: var(--danger-soft);
+            border-color: #d7a4a1;
+        }
+        .readout strong {
+            display: block;
+            margin-bottom: 0.25rem;
         }
         table {
             width: 100%;
@@ -327,7 +374,7 @@
             border-radius: 4px;
         }
         @media (max-width: 840px) {
-            .split-layout {
+            .workflow-grid {
                 grid-template-columns: 1fr;
             }
         }
@@ -344,6 +391,10 @@
             .panel {
                 padding: 1rem;
             }
+            .inline-form {
+                display: grid;
+                align-items: stretch;
+            }
             table {
                 display: block;
                 overflow-x: auto;
@@ -356,14 +407,14 @@
         <div class="header-shell">
             <div class="brand-row">
                 <div>
-                    <h1>Access Control</h1>
-                    <div class="tagline">Request access to protected systems.</div>
+                    <h1>MFA Operator</h1>
+                    <div class="tagline">Enroll first, then run access checks.</div>
                 </div>
             </div>
             <nav>
-                <a href="{% url 'core:home' %}">Home</a>
-                <a href="{% url 'core:access-start' %}">Access</a>
-                <a href="{% url 'core:enroll' %}">Enroll</a>
+                <a class="{% if nav_key == 'home' %}active{% endif %}" href="{% url 'core:home' %}">Home</a>
+                <a class="{% if nav_key == 'enroll' %}active{% endif %}" href="{% url 'core:enroll' %}">Enroll</a>
+                <a class="{% if nav_key == 'access' %}active{% endif %}" href="{% url 'core:access-start' %}">Access</a>
             </nav>
         </div>
     </header>

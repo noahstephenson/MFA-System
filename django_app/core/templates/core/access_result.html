@@ -1,20 +1,72 @@
 {% extends "core/base.html" %}
 
-{% block title %}Access Result {{ session.id }} | Access Control{% endblock title %}
+{% block title %}Access Result {{ session.id }} | MFA Operator{% endblock title %}
 
 {% block content %}
-<section class="panel hero">
-    <div class="hero-copy">
-        <div class="eyebrow">Access result</div>
+<section class="panel page-header">
+    <div>
+        <div class="eyebrow">Result</div>
         <h1>{% if session.is_access_granted %}Access granted{% else %}Access denied{% endif %}</h1>
-        <p class="muted">{{ result_message }}</p>
+        <p class="lead">{{ result_message }}</p>
     </div>
     <div class="actions">
-        <a class="button" href="{% url 'core:access-start' %}">Start Another Attempt</a>
+        <a class="button" href="{% url 'core:access-start' %}">Start Another Request</a>
     </div>
 </section>
 
+<div class="summary-grid">
+    <section class="panel">
+        <div class="eyebrow">Request</div>
+        <h2 style="margin-top: 0;">Request details</h2>
+        <ul class="detail-list">
+            <li>
+                <span class="detail-label">Person</span>
+                {{ session.user.username|default:"Unknown" }}
+            </li>
+            <li>
+                <span class="detail-label">Resource</span>
+                {{ session.resource.name }}
+            </li>
+            <li>
+                <span class="detail-label">Tier</span>
+                {{ session.policy.get_tier_display|default:session.details.selected_tier|default:"Unspecified" }}
+            </li>
+            <li>
+                <span class="detail-label">Factors accepted</span>
+                {{ session.accepted_factor_count }} of {{ session.required_factor_count }}
+            </li>
+        </ul>
+    </section>
+
+    <section class="panel">
+        <div class="eyebrow">Decision</div>
+        <h2 style="margin-top: 0;">Result</h2>
+        <ul class="detail-list">
+            <li>
+                <span class="detail-label">Identity</span>
+                {% if authentication_result.ok %}Accepted{% else %}Failed{% endif %}
+            </li>
+            <li>
+                <span class="detail-label">Resource</span>
+                {% if authorization_result.ok %}Approved{% else %}Denied{% endif %}
+            </li>
+            {% if authorization_result.degraded_access_required %}
+                <li>
+                    <span class="detail-label">Tier 3 approval</span>
+                    {% if authorization_result.resource_allows_degraded_access %}Approved{% else %}Not approved{% endif %}
+                </li>
+            {% endif %}
+            <li>
+                <span class="detail-label">Note</span>
+                {{ decision_note|default:"No result details recorded." }}
+            </li>
+        </ul>
+    </section>
+</div>
+
 <section class="panel">
+    <div class="eyebrow">Factors</div>
+    <h2 style="margin-top: 0;">Factor results</h2>
     <div class="factor-grid">
         {% for card in factor_cards %}
             <article class="factor-card {{ card.state }}">
@@ -22,132 +74,46 @@
                     <h3>{{ card.label }}</h3>
                     <span class="pill {% if card.state != 'neutral' %}{{ card.state }}{% endif %}">{{ card.status }}</span>
                 </div>
-                <p class="muted" style="margin-bottom: 0;">{{ card.detail }}</p>
+                <p class="muted">{{ card.detail }}</p>
             </article>
         {% endfor %}
     </div>
 </section>
 
-<div class="split-layout">
+<div class="summary-grid">
     <section class="panel">
-        <div class="eyebrow">Authentication</div>
-        <h2 style="margin-top: 0;">Authentication result</h2>
+        <div class="eyebrow">Identity</div>
+        <h2 style="margin-top: 0;">Identity check</h2>
         <ul class="detail-list">
             <li>
                 <span class="detail-label">Outcome</span>
-                {% if authentication_result.ok %}Succeeded{% else %}Failed{% endif %}
+                {% if authentication_result.ok %}Passed{% else %}Failed{% endif %}
             </li>
             <li>
-                <span class="detail-label">Required factors</span>
-                {% if authentication_result.required_factor_types %}
-                    {% for factor_type in authentication_result.required_factor_types %}
-                        {% if factor_type == "rfid" %}Badge{% elif factor_type == "biometric" %}Fingerprint{% elif factor_type == "pin" %}PIN{% else %}{{ factor_type }}{% endif %}{% if not forloop.last %}, {% endif %}
-                    {% endfor %}
-                {% else %}
-                    None
-                {% endif %}
-            </li>
-            <li>
-                <span class="detail-label">Verified factors</span>
-                {% if authentication_result.verified_factor_types %}
-                    {% for factor_type in authentication_result.verified_factor_types %}
-                        {% if factor_type == "rfid" %}Badge{% elif factor_type == "biometric" %}Fingerprint{% elif factor_type == "pin" %}PIN{% else %}{{ factor_type }}{% endif %}{% if not forloop.last %}, {% endif %}
-                    {% endfor %}
-                {% else %}
-                    None
-                {% endif %}
-            </li>
-            <li>
-                <span class="detail-label">Message</span>
-                {{ authentication_result.message|default:"No authentication details recorded." }}
+                <span class="detail-label">Note</span>
+                {{ authentication_note|default:"No identity details recorded." }}
             </li>
         </ul>
     </section>
 
     <section class="panel">
-        <div class="eyebrow">Authorization</div>
-        <h2 style="margin-top: 0;">Authorization result</h2>
+        <div class="eyebrow">Resource</div>
+        <h2 style="margin-top: 0;">Resource check</h2>
         <ul class="detail-list">
             <li>
                 <span class="detail-label">Outcome</span>
-                {% if authorization_result.ok %}Granted{% else %}Denied{% endif %}
+                {% if authorization_result.ok %}Passed{% else %}Failed{% endif %}
             </li>
             <li>
-                <span class="detail-label">Degraded access required</span>
-                {% if authorization_result.degraded_access_required %}Yes{% else %}No{% endif %}
-            </li>
-            <li>
-                <span class="detail-label">Resource degraded approval</span>
-                {% if authorization_result.resource_allows_degraded_access %}Approved{% else %}Not approved{% endif %}
-            </li>
-            <li>
-                <span class="detail-label">Message</span>
-                {{ authorization_result.message|default:"No authorization details recorded." }}
-            </li>
-        </ul>
-    </section>
-</div>
-
-<div class="split-layout">
-    <section class="panel">
-        <div class="eyebrow">Collection</div>
-        <h2 style="margin-top: 0;">Factor collection</h2>
-        <ul class="detail-list">
-            <li>
-                <span class="detail-label">Collection outcome</span>
-                {% if collection_summary.ok %}Completed{% else %}Issue detected{% endif %}
-            </li>
-            {% if collection_summary.message %}
-                <li>
-                    <span class="detail-label">Collection message</span>
-                    {{ collection_summary.message }}
-                </li>
-            {% endif %}
-            <li>
-                <span class="detail-label">Badge</span>
-                {{ collection_summary.badge_detail }}
-            </li>
-            <li>
-                <span class="detail-label">Fingerprint</span>
-                {{ collection_summary.fingerprint_detail }}
-            </li>
-        </ul>
-    </section>
-
-    <section class="panel">
-        <div class="eyebrow">Session</div>
-        <h2 style="margin-top: 0;">Session summary</h2>
-        <ul class="detail-list">
-            <li>
-                <span class="detail-label">Session</span>
-                {{ session.id }}
-            </li>
-            <li>
-                <span class="detail-label">User</span>
-                {{ session.user.username|default:"Unknown" }}
-            </li>
-            <li>
-                <span class="detail-label">Tier</span>
-                {{ session.policy.get_tier_display|default:session.details.selected_tier|default:"Unspecified" }}
-            </li>
-            <li>
-                <span class="detail-label">Resource</span>
-                {{ session.resource.name }}
-            </li>
-            <li>
-                <span class="detail-label">Applied policy</span>
-                {{ session.policy.name|default:"Fallback policy" }}
-            </li>
-            <li>
-                <span class="detail-label">Accepted factors</span>
-                {{ session.accepted_factor_count }} of {{ session.required_factor_count }}
+                <span class="detail-label">Note</span>
+                {{ authorization_note|default:"No resource details recorded." }}
             </li>
         </ul>
     </section>
 </div>
 
 <section class="panel">
-    <div class="eyebrow">Audit</div>
+    <div class="eyebrow">Activity</div>
     <h2 style="margin-top: 0;">Recent activity</h2>
     {% if audit_entries %}
         <ul class="detail-list">

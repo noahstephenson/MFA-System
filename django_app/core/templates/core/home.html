@@ -1,43 +1,26 @@
 {% extends "core/base.html" %}
 
-{% block title %}Home | Access Control{% endblock title %}
+{% block title %}Home | MFA Operator{% endblock title %}
 
 {% block content %}
-<section class="panel hero">
-    <div class="hero-copy">
-        <div class="eyebrow">Demo ATAK</div>
-        <h1>Access Control</h1>
-        <p class="muted">Choose the next step for the live demo.</p>
+<section class="panel page-header">
+    <div>
+        <div class="eyebrow">Operator workflow</div>
+        <h1>Choose the next step</h1>
+        <p class="lead">Enroll credentials first, then start an access request.</p>
     </div>
 </section>
 
-<div class="card-grid">
-    <a class="feature-card" href="{% url 'core:access-start' %}">
-        <div class="eyebrow">Access</div>
-        <h2>Start Access Request</h2>
-        <p class="muted">Run Tier 1, Tier 2, or Tier 3 checks for the selected user and resource.</p>
-    </a>
+<div class="action-grid">
     <a class="feature-card" href="{% url 'core:enroll' %}">
-        <div class="eyebrow">Enrollment</div>
+        <div class="eyebrow">Step 1</div>
         <h2>Enroll Credentials</h2>
-        <p class="muted">Store badge IDs, fingerprint IDs, and PIN values for the demo users.</p>
+        <p class="muted">Scan a badge, capture a fingerprint, or save a PIN.</p>
+    </a>
+    <a class="feature-card" href="{% url 'core:access-start' %}">
+        <div class="eyebrow">Step 2</div>
+        <h2>Start Access Request</h2>
+        <p class="muted">Choose the person, resource, and tier, then run the check.</p>
     </a>
 </div>
-
-<section class="panel compact">
-    <div class="stats">
-        <div>
-            <div class="eyebrow">Users</div>
-            <div class="stat-value">{{ active_user_count }}</div>
-        </div>
-        <div>
-            <div class="eyebrow">Resources</div>
-            <div class="stat-value">{{ active_resource_count }}</div>
-        </div>
-        <div>
-            <div class="eyebrow">Credentials</div>
-            <div class="stat-value">{{ active_credential_count }}</div>
-        </div>
-    </div>
-</section>
 {% endblock content %}

@@ -1,22 +1,22 @@
 {% extends "core/base.html" %}
 
-{% block title %}Access | Access Control{% endblock title %}
+{% block title %}Access | MFA Operator{% endblock title %}
 
 {% block content %}
-<section class="panel hero">
-    <div class="hero-copy">
+<section class="panel page-header">
+    <div>
         <div class="eyebrow">Access</div>
-        <h1>Start Access Request</h1>
-        <p class="muted">Select user, resource, and tier to begin.</p>
+        <h1>Start access request</h1>
+        <p class="lead">Choose the person, resource, and tier.</p>
     </div>
 </section>
 
 <form method="post" action="{% url 'core:access-start' %}">
     {% csrf_token %}
-    <div class="split-layout">
+    <div class="workflow-grid">
         <section class="panel">
-            <div class="eyebrow">Request setup</div>
-            <h2 style="margin-top: 0;">Request details</h2>
+            <div class="eyebrow">Request</div>
+            <h2 style="margin-top: 0;">Request setup</h2>
             {{ form.non_field_errors }}
             <div class="form-grid">
                 <div class="form-field">
@@ -38,14 +38,9 @@
         </section>
 
         <aside class="panel">
-            <div class="eyebrow">Required factors</div>
-            <h2 style="margin-top: 0;">Current tier</h2>
-            <p class="muted" id="tier-note">{{ tier_note }}</p>
-            <div class="detail-list" style="margin-bottom: 1rem;">
-                <div class="muted">Tier 1: Badge + Fingerprint</div>
-                <div class="muted">Tier 2: Badge + PIN</div>
-                <div class="muted">Tier 3: Badge + PIN + Degraded resource only</div>
-            </div>
+            <div class="eyebrow">Factors</div>
+            <h2 style="margin-top: 0;">Required factors</h2>
+            <div class="status-note" id="tier-note">{{ tier_note }}</div>
             <div class="factor-grid" id="factor-grid">
                 {% for card in factor_cards %}
                     <article class="factor-card {{ card.state }}" data-factor-key="{{ card.key }}">
@@ -53,7 +48,7 @@
                             <h3>{{ card.label }}</h3>
                             <span class="pill {% if card.state != 'neutral' %}{{ card.state }}{% endif %}" data-role="status">{{ card.status }}</span>
                         </div>
-                        <p class="muted" data-role="detail" style="margin-bottom: 0.75rem;">{{ card.detail }}</p>
+                        <p class="muted" data-role="detail">{{ card.detail }}</p>
                         {% if card.key == "pin" %}
                             <div data-role="pin-input">
                                 <div class="form-field" style="margin-top: 0.5rem;">
@@ -70,7 +65,7 @@
     </div>
 
     <div class="actions" style="margin-top: 1rem;">
-        <button type="submit">Begin Access Check</button>
+        <button type="submit">Run Access Check</button>
     </div>
 </form>
 
@@ -86,21 +81,21 @@
         const tierConfig = {
             basic: {
                 note: "Tier 1: Badge + Fingerprint",
-                rfid: { state: "neutral", status: "Pending", detail: "Required", pinVisible: false },
-                biometric: { state: "neutral", status: "Pending", detail: "Required", pinVisible: false },
+                rfid: { state: "neutral", status: "Pending", detail: "Scan badge", pinVisible: false },
+                biometric: { state: "neutral", status: "Pending", detail: "Capture fingerprint", pinVisible: false },
                 pin: { state: "muted", status: "Not Required", detail: "Not required", pinVisible: false }
             },
             elevated: {
                 note: "Tier 2: Badge + PIN",
-                rfid: { state: "neutral", status: "Pending", detail: "Required", pinVisible: false },
+                rfid: { state: "neutral", status: "Pending", detail: "Scan badge", pinVisible: false },
                 biometric: { state: "muted", status: "Not Required", detail: "Not required", pinVisible: false },
-                pin: { state: "neutral", status: "Pending", detail: "Required", pinVisible: true }
+                pin: { state: "neutral", status: "Pending", detail: "Enter PIN", pinVisible: true }
             },
             high: {
-                note: "Tier 3: Badge + PIN + Degraded resource only",
-                rfid: { state: "neutral", status: "Pending", detail: "Required", pinVisible: false },
+                note: "Tier 3: Badge + PIN + approved degraded resource",
+                rfid: { state: "neutral", status: "Pending", detail: "Scan badge", pinVisible: false },
                 biometric: { state: "muted", status: "Not Required", detail: "Not required", pinVisible: false },
-                pin: { state: "neutral", status: "Pending", detail: "Required", pinVisible: true }
+                pin: { state: "neutral", status: "Pending", detail: "Enter PIN", pinVisible: true }
             }
         };
 

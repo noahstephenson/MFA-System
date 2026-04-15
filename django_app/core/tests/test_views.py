@@ -55,33 +55,124 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
     def _fingerprint_fail(self, *, error="not_matched", message="Fingerprint not matched."):
         return {"ok": False, "matched": False, "error": error, "message": message}
 
-    def test_home_page_renders_primary_actions(self):
+    def test_home_page_renders_primary_actions_in_operator_order(self):
         response = self.client.get(reverse("core:home"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Access Control")
-        self.assertContains(response, "Demo ATAK")
-        self.assertContains(response, "Start Access Request")
+        self.assertContains(response, "MFA Operator")
         self.assertContains(response, "Enroll Credentials")
+        self.assertContains(response, "Start Access Request")
 
-    def test_enrollment_page_renders_required_fields(self):
-        response = self.client.get(reverse("core:enroll"))
+        content = response.content.decode("utf-8")
+        self.assertLess(content.index("Enroll Credentials"), content.index("Start Access Request"))
+
+    def test_enrollment_page_renders_operator_actions_without_manual_hardware_fields(self):
+        response = self.client.get(f"{reverse('core:enroll')}?user={self.user.id}")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Enroll credentials")
-        self.assertContains(response, "Credential type")
-        self.assertContains(response, "Identifier / value")
-        self.assertContains(response, "Save Credential")
-        self.assertContains(response, "Use the badge UID captured during enrollment.")
+        self.assertContains(response, "Scan Badge")
+        self.assertContains(response, "Capture Fingerprint")
+        self.assertContains(response, "Save PIN")
+        self.assertContains(response, 'name="pin"', html=False)
+        self.assertNotContains(response, "Identifier / value")
+        self.assertNotContains(response, "Credential type")
+        self.assertNotContains(response, 'name="identifier"', html=False)
 
-    def test_enrollment_submission_creates_credential_and_redirects_to_selected_user(self):
+    @patch("core.views.capture_enrollment_identifier")
+    def test_badge_capture_flow_uses_hardware_result_before_save(self, mock_capture):
+        mock_capture.return_value = {
+            "ok": True,
+            "identifier": "CARD-2002",
+            "message": "Badge ready to save.",
+            "capture_result": {},
+        }
+
+        capture_response = self.client.post(
+            reverse("core:enroll"),
+            {
+                "action": "capture-rfid",
+                "user": self.user.id,
+            },
+        )
+
+        self.assertEqual(capture_response.status_code, 200)
+        self.assertContains(capture_response, "Ready to save")
+        self.assertContains(capture_response, "UID CARD-2002")
+        self.assertContains(capture_response, "Save Badge")
+
+        save_response = self.client.post(
+            reverse("core:enroll"),
+            {
+                "action": "save-rfid",
+                "user": self.user.id,
+                "captured_identifier": "CARD-2002",
+                "label": "Spare badge",
+            },
+        )
+
+        self.assertRedirects(save_response, f"{reverse('core:enroll')}?user={self.user.id}")
+        self.assertTrue(
+            Credential.objects.filter(
+                user=self.user,
+                credential_type=Credential.CredentialType.RFID,
+                identifier="CARD-2002",
+                label="Spare badge",
+                active=True,
+            ).exists()
+        )
+
+    @patch("core.views.capture_enrollment_identifier")
+    def test_fingerprint_capture_flow_uses_hardware_result_before_save(self, mock_capture):
+        mock_capture.return_value = {
+            "ok": True,
+            "identifier": "7",
+            "message": "Fingerprint ready to save.",
+            "capture_result": {},
+        }
+
+        capture_response = self.client.post(
+            reverse("core:enroll"),
+            {
+                "action": "capture-fingerprint",
+                "user": self.user.id,
+            },
+        )
+
+        self.assertEqual(capture_response.status_code, 200)
+        self.assertContains(capture_response, "Ready to save")
+        self.assertContains(capture_response, "ID 7")
+        self.assertContains(capture_response, "Save Fingerprint")
+
+        save_response = self.client.post(
+            reverse("core:enroll"),
+            {
+                "action": "save-fingerprint",
+                "user": self.user.id,
+                "captured_identifier": "7",
+                "label": "Backup print",
+            },
+        )
+
+        self.assertRedirects(save_response, f"{reverse('core:enroll')}?user={self.user.id}")
+        self.assertTrue(
+            Credential.objects.filter(
+                user=self.user,
+                credential_type=Credential.CredentialType.BIOMETRIC,
+                identifier="7",
+                label="Backup print",
+                active=True,
+            ).exists()
+        )
+
+    def test_pin_enrollment_is_manual(self):
         response = self.client.post(
             reverse("core:enroll"),
             {
+                "action": "save-pin",
                 "user": self.user.id,
-                "credential_type": Credential.CredentialType.BIOMETRIC,
-                "identifier": "7",
-                "label": "Backup fingerprint",
+                "pin": "1357",
+                "label": "Shift PIN",
             },
         )
 
@@ -89,34 +180,26 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertTrue(
             Credential.objects.filter(
                 user=self.user,
-                credential_type=Credential.CredentialType.BIOMETRIC,
-                identifier="7",
+                credential_type=Credential.CredentialType.PIN,
+                identifier="1357",
+                label="Shift PIN",
                 active=True,
             ).exists()
         )
 
-        follow_response = self.client.get(f"{reverse('core:enroll')}?user={self.user.id}")
-        self.assertContains(follow_response, self.user.username)
-        self.assertContains(follow_response, "Backup fingerprint")
-        self.assertContains(follow_response, "Alice badge")
-        self.assertContains(follow_response, "Stored PIN")
-
-    def test_access_start_page_loads_with_required_fields_and_factor_cards(self):
+    def test_access_start_page_loads_with_operator_sections_and_factor_cards(self):
         response = self.client.get(reverse("core:access-start"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Start Access Request")
-        self.assertContains(response, "Begin Access Check")
-        self.assertContains(response, "User")
-        self.assertContains(response, "Resource")
-        self.assertContains(response, "Tier")
-        self.assertContains(response, "PIN")
-        self.assertContains(response, "Current tier")
+        self.assertContains(response, "Start access request")
+        self.assertContains(response, "Request setup")
+        self.assertContains(response, "Required factors")
+        self.assertContains(response, "Run Access Check")
         self.assertContains(response, "Badge")
         self.assertContains(response, "Fingerprint")
-        self.assertContains(response, "Tier 1: Badge + Fingerprint")
+        self.assertContains(response, "PIN")
 
-    def test_access_start_page_shows_tier2_requirements_cleanly(self):
+    def test_access_start_page_shows_tier2_factor_states(self):
         response = self.client.post(
             reverse("core:access-start"),
             {
@@ -128,11 +211,11 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Tier 2: Badge + PIN")
-        self.assertContains(response, "PIN")
         self.assertContains(response, "Not Required")
+        self.assertContains(response, "Enter the PIN for Tier 2 and Tier 3.")
         self.assertEqual(AuthenticationSession.objects.count(), 0)
 
-    def test_access_start_page_shows_tier3_requirements_cleanly(self):
+    def test_access_start_page_shows_tier3_factor_states(self):
         response = self.client.post(
             reverse("core:access-start"),
             {
@@ -143,8 +226,9 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Tier 3: Badge + PIN + Degraded resource only")
+        self.assertContains(response, "Tier 3: Badge + PIN + approved degraded resource")
         self.assertContains(response, "PIN")
+        self.assertContains(response, "Not Required")
         self.assertEqual(AuthenticationSession.objects.count(), 0)
 
     def test_invalid_form_submission_rerenders_cleanly_with_useful_errors(self):
@@ -159,11 +243,11 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Select a valid choice")
-        self.assertContains(response, "Start Access Request")
+        self.assertContains(response, "Start access request")
         self.assertEqual(AuthenticationSession.objects.count(), 0)
 
     @patch("core.services.node_red_client.collect_factors")
-    def test_tier1_result_page_shows_green_factor_states(self, mock_collect):
+    def test_tier1_result_page_shows_factor_states(self, mock_collect):
         mock_collect.return_value = self._node_red_result(
             rfid=self._rfid_ok(),
             fingerprint=self._fingerprint_ok(),
@@ -178,9 +262,9 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertRedirects(response, reverse("core:access-result", args=[session.id]))
         result_response = self.client.get(reverse("core:access-result", args=[session.id]))
         self.assertContains(result_response, "Access granted")
+        self.assertContains(result_response, "Factor results")
         self.assertContains(result_response, "Accepted")
-        self.assertContains(result_response, "Fingerprint ID 4")
-        self.assertContains(result_response, "PIN")
+        self.assertContains(result_response, "ID 4")
         self.assertContains(result_response, "Not Required")
 
     @patch("core.services.node_red_client.collect_factors")
@@ -206,13 +290,13 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         result_response = self.client.get(reverse("core:access-result", args=[session.id]))
         self.assertContains(result_response, "Access denied")
-        self.assertContains(result_response, "Authorization result")
-        self.assertContains(result_response, "Selected resource is not approved for Tier 3 degraded access.")
+        self.assertContains(result_response, "Resource check")
+        self.assertContains(result_response, "Resource is not approved for Tier 3 access.")
         self.assertContains(result_response, "Fingerprint")
         self.assertContains(result_response, "Not Required")
 
     @patch("core.services.node_red_client.collect_factors")
-    def test_result_page_makes_external_node_red_failure_understandable(self, mock_collect):
+    def test_result_page_hides_node_red_language(self, mock_collect):
         mock_collect.return_value = self._node_red_result(
             ok=False,
             error="timeout",
@@ -245,8 +329,8 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         session = AuthenticationSession.objects.get()
 
         result_response = self.client.get(reverse("core:access-result", args=[session.id]))
-        self.assertContains(result_response, "Collection message")
-        self.assertContains(result_response, "Factor service timed out.")
+        self.assertNotContains(result_response, "Node-RED")
+        self.assertContains(result_response, "Factors received with errors.")
         self.assertContains(result_response, "Badge scan unavailable.")
         self.assertContains(result_response, "Fingerprint service timed out.")
 
