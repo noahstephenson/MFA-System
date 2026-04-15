@@ -68,28 +68,11 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
             "message": message,
         }
 
-    @patch("core.services.node_red_client.collect_factors")
-    def test_api_access_start_tier1_success_shape(self, mock_collect):
-        mock_collect.return_value = self._node_red_result(
-            rfid=self._rfid_ok(),
-            fingerprint=self._fingerprint_ok(),
+    def _assert_session_payload_shape(self, payload):
+        self.assertEqual(
+            set(payload["data"].keys()),
+            {"session", "node_red"},
         )
-
-        response = self.client.post(
-            reverse("core:api-access-start"),
-            data=json.dumps(
-                {
-                    "resource_id": self.resource.id,
-                    "user_id": self.user.id,
-                    "tier": self.tier1_policy.tier,
-                }
-            ),
-            content_type="application/json",
-        )
-
-        payload = response.json()
-        self.assertEqual(response.status_code, 201)
-        self.assertTrue(payload["ok"])
         self.assertEqual(
             set(payload["data"]["session"].keys()),
             {
@@ -113,6 +96,34 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
                 "result_url",
             },
         )
+        self.assertEqual(
+            set(payload["data"]["node_red"].keys()),
+            {"ok", "error", "message"},
+        )
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_api_access_start_tier1_success_shape(self, mock_collect):
+        mock_collect.return_value = self._node_red_result(
+            rfid=self._rfid_ok(),
+            fingerprint=self._fingerprint_ok(),
+        )
+
+        response = self.client.post(
+            reverse("core:api-access-start"),
+            data=json.dumps(
+                {
+                    "resource_id": self.resource.id,
+                    "user_id": self.user.id,
+                    "tier": self.tier1_policy.tier,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(payload["ok"])
+        self._assert_session_payload_shape(payload)
         self.assertTrue(payload["data"]["session"]["authentication"]["ok"])
         self.assertTrue(payload["data"]["session"]["authorization"]["ok"])
 
@@ -151,6 +162,18 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
         response = self.client.post(
             reverse("core:api-access-start"),
             data="not-json",
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertFalse(payload["ok"])
+        self.assertIn("body", payload["errors"])
+
+    def test_api_access_start_rejects_non_object_json_body(self):
+        response = self.client.post(
+            reverse("core:api-access-start"),
+            data=json.dumps([1, 2, 3]),
             content_type="application/json",
         )
 
@@ -235,6 +258,7 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
 
         payload = response.json()
         self.assertEqual(response.status_code, 201)
+        self._assert_session_payload_shape(payload)
         self.assertFalse(payload["data"]["session"]["authentication"]["ok"])
         self.assertFalse(payload["data"]["session"]["authorization"]["ok"])
         self.assertFalse(payload["data"]["session"]["is_access_granted"])
@@ -242,6 +266,37 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
             payload["data"]["session"]["factor_collection_result"]["fingerprint"]["error"],
             "not_matched",
         )
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_api_access_start_tier1_does_not_accept_rfid_plus_knowledge(self, mock_collect):
+        mock_collect.return_value = self._node_red_result(
+            ok=True,
+            rfid=self._rfid_ok(),
+            fingerprint=self._fingerprint_fail(),
+        )
+
+        response = self.client.post(
+            reverse("core:api-access-start"),
+            data=json.dumps(
+                {
+                    "resource_id": self.resource.id,
+                    "user_id": self.user.id,
+                    "tier": self.tier1_policy.tier,
+                    "knowledge_factor": self.pin.identifier,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 201)
+        self._assert_session_payload_shape(payload)
+        self.assertFalse(payload["data"]["session"]["authentication"]["ok"])
+        self.assertEqual(
+            payload["data"]["session"]["authentication"]["verified_factor_types"],
+            ["rfid"],
+        )
+        self.assertFalse(payload["data"]["session"]["is_access_granted"])
 
     @patch("core.services.node_red_client.collect_factors")
     def test_api_access_start_tier2_success_with_knowledge_factor(self, mock_collect):
@@ -268,12 +323,44 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
 
         payload = response.json()
         self.assertEqual(response.status_code, 201)
+        self._assert_session_payload_shape(payload)
         self.assertTrue(payload["data"]["session"]["authentication"]["ok"])
         self.assertTrue(payload["data"]["session"]["authorization"]["ok"])
         self.assertEqual(
             payload["data"]["session"]["authentication"]["verified_factor_types"],
             ["rfid", "pin"],
         )
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_api_access_start_tier2_denial_wrong_knowledge_message(self, mock_collect):
+        mock_collect.return_value = self._node_red_result(
+            ok=True,
+            rfid=self._rfid_ok(),
+            fingerprint=self._fingerprint_ok(),
+        )
+
+        response = self.client.post(
+            reverse("core:api-access-start"),
+            data=json.dumps(
+                {
+                    "resource_id": self.resource.id,
+                    "user_id": self.user.id,
+                    "tier": self.tier2_policy.tier,
+                    "knowledge_factor": "9999",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 201)
+        self._assert_session_payload_shape(payload)
+        self.assertFalse(payload["data"]["session"]["authentication"]["ok"])
+        self.assertEqual(
+            payload["data"]["session"]["authentication"]["message"],
+            "Knowledge factor did not match the enrolled credential.",
+        )
+        self.assertFalse(payload["data"]["session"]["is_access_granted"])
 
     @patch("core.services.node_red_client.collect_factors")
     def test_api_access_start_tier2_does_not_require_fingerprint(self, mock_collect):
@@ -330,6 +417,7 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
 
         payload = response.json()
         self.assertEqual(response.status_code, 201)
+        self._assert_session_payload_shape(payload)
         self.assertTrue(payload["data"]["session"]["authentication"]["ok"])
         self.assertFalse(payload["data"]["session"]["authorization"]["ok"])
         self.assertFalse(payload["data"]["session"]["is_access_granted"])
@@ -363,6 +451,7 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
 
         payload = response.json()
         self.assertEqual(response.status_code, 201)
+        self._assert_session_payload_shape(payload)
         self.assertTrue(payload["data"]["session"]["authentication"]["ok"])
         self.assertTrue(payload["data"]["session"]["authorization"]["ok"])
         self.assertTrue(payload["data"]["session"]["is_access_granted"])
@@ -392,10 +481,51 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
 
         payload = response.json()
         self.assertEqual(response.status_code, 201)
+        self._assert_session_payload_shape(payload)
         self.assertFalse(payload["data"]["session"]["authentication"]["ok"])
         self.assertEqual(
             payload["data"]["session"]["factor_collection_result"]["error"],
             "invalid_payload",
+        )
+        self.assertEqual(payload["data"]["node_red"]["error"], "invalid_payload")
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_api_access_start_empty_combined_payload_is_not_treated_as_success(self, mock_collect):
+        mock_collect.return_value = self._node_red_result(
+            ok=False,
+            error="invalid_payload",
+            message="Node-RED did not return any factor data.",
+            rfid={"ok": False, "sensor": "rfid", "error": "missing", "message": "RFID data was not returned."},
+            fingerprint={
+                "ok": False,
+                "sensor": "fingerprint",
+                "matched": False,
+                "error": "missing",
+                "message": "Fingerprint data was not returned.",
+            },
+            raw={},
+        )
+
+        response = self.client.post(
+            reverse("core:api-access-start"),
+            data=json.dumps(
+                {
+                    "resource_id": self.resource.id,
+                    "user_id": self.user.id,
+                    "tier": self.tier1_policy.tier,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 201)
+        self._assert_session_payload_shape(payload)
+        self.assertFalse(payload["data"]["session"]["authentication"]["ok"])
+        self.assertEqual(payload["data"]["node_red"]["error"], "invalid_payload")
+        self.assertEqual(
+            payload["data"]["node_red"]["message"],
+            "Node-RED did not return any factor data.",
         )
 
     @patch("core.services.node_red_client.collect_factors")
@@ -424,6 +554,8 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
 
         payload = response.json()
         self.assertEqual(response.status_code, 201)
+        self._assert_session_payload_shape(payload)
         self.assertFalse(payload["data"]["session"]["authentication"]["ok"])
         self.assertFalse(payload["data"]["session"]["authorization"]["ok"])
         self.assertEqual(payload["data"]["node_red"]["error"], "timeout")
+        self.assertEqual(payload["data"]["node_red"]["message"], "Fingerprint service timed out.")

@@ -488,6 +488,53 @@ class NodeRedDjangoBoundaryTests(CoreTestDataMixin, TestCase):
             },
         )
 
+    def test_api_access_start_real_http_tier3_request_uses_pin_factor_types_and_degraded_auth(self):
+        with RecordingNodeRedServer(
+            {
+                ("POST", "/api/auth/collect-factors"): {
+                    "status": 200,
+                    "body": {
+                        "ok": True,
+                        "message": "",
+                        "rfid": {"ok": True, "sensor": "rfid", "uid": self.rfid.identifier, "message": ""},
+                    },
+                }
+            }
+        ) as server:
+            with self.settings(NODE_RED_BASE_URL=server.base_url, NODE_RED_TIMEOUT=2):
+                response = self.client.post(
+                    reverse("core:api-access-start"),
+                    data=json.dumps(
+                        {
+                            "resource_id": self.resource.id,
+                            "tier": self.tier3_policy.tier,
+                            "user_id": self.user.id,
+                            "knowledge_factor": self.pin.identifier,
+                        }
+                    ),
+                    content_type="application/json",
+                )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["data"]["session"]["is_access_granted"])
+        self.assertEqual(
+            payload["data"]["session"]["authorization"]["message"],
+            "Selected resource is not approved for Tier 3 degraded access.",
+        )
+        self.assertEqual(
+            server.requests[0]["body_json"],
+            {
+                "session_id": payload["data"]["session"]["id"],
+                "resource_id": self.resource.id,
+                "user_id": self.user.id,
+                "policy_id": self.tier3_policy.id,
+                "required_factor_count": 2,
+                "allowed_factor_types": ["rfid", "pin"],
+            },
+        )
+
     def test_api_access_start_real_http_timeout_denies_access_cleanly(self):
         def slow_collect(_request_record):
             time.sleep(0.25)

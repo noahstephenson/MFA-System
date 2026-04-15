@@ -48,15 +48,26 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
     def _fingerprint_fail(self, *, error="not_matched", message="Fingerprint not matched."):
         return {"ok": False, "matched": False, "error": error, "message": message}
 
+    def test_home_redirects_to_access_start(self):
+        response = self.client.get(reverse("core:home"))
+
+        self.assertRedirects(response, reverse("core:access-start"))
+
     def test_access_start_page_loads_with_required_fields(self):
         response = self.client.get(reverse("core:access-start"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Start access attempt")
+        self.assertContains(response, "Django receives the access request")
+        self.assertContains(response, "Run Access Attempt")
         self.assertContains(response, self.user.username)
         self.assertContains(response, "Protected resource")
         self.assertContains(response, "Access tier")
         self.assertContains(response, "Knowledge factor")
+        self.assertEqual(
+            list(response.context["form"].fields.keys()),
+            ["user", "resource", "tier", "knowledge_factor"],
+        )
 
     def test_access_start_page_validates_knowledge_input_for_tier2(self):
         response = self.client.post(
@@ -70,6 +81,36 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Provide the knowledge factor for Tier 2 and Tier 3 access attempts.")
+        self.assertEqual(AuthenticationSession.objects.count(), 0)
+
+    def test_access_start_page_validates_knowledge_input_for_tier3(self):
+        response = self.client.post(
+            reverse("core:access-start"),
+            {
+                "user": self.user.id,
+                "resource": self.degraded_resource.id,
+                "tier": self.degraded_tier3_policy.tier,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Provide the knowledge factor for Tier 2 and Tier 3 access attempts.")
+        self.assertEqual(AuthenticationSession.objects.count(), 0)
+
+    def test_invalid_form_submission_rerenders_cleanly_with_useful_errors(self):
+        response = self.client.post(
+            reverse("core:access-start"),
+            {
+                "user": self.user.id,
+                "resource": self.resource.id,
+                "tier": "tier-99",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Select a valid choice")
+        self.assertContains(response, "Start access attempt")
+        self.assertEqual(AuthenticationSession.objects.count(), 0)
 
     @patch("core.services.node_red_client.collect_factors")
     def test_tier1_post_redirects_to_result_page(self, mock_collect):
@@ -112,6 +153,11 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertContains(result_response, "Access granted")
         self.assertContains(result_response, "Authentication")
         self.assertContains(result_response, "Authorization")
+        self.assertContains(result_response, "Factor collection")
+        self.assertContains(result_response, "Collection outcome")
+        self.assertContains(result_response, "Session summary")
+        self.assertContains(result_response, "Recent audit events")
+        self.assertContains(result_response, "Start Another Attempt")
 
     @patch("core.services.node_red_client.collect_factors")
     def test_tier3_post_redirects_to_granted_result_page_for_degraded_resource(self, mock_collect):
@@ -163,3 +209,49 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         result_response = self.client.get(reverse("core:access-result", args=[session.id]))
         self.assertContains(result_response, "Access denied")
         self.assertContains(result_response, "Selected resource is not approved for Tier 3 degraded access.")
+        self.assertContains(result_response, "Authorization")
+        self.assertContains(result_response, "Resource degraded approval")
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_result_page_makes_external_node_red_failure_understandable(self, mock_collect):
+        mock_collect.return_value = self._node_red_result(
+            ok=False,
+            error="timeout",
+            message="Node-RED request timed out.",
+            rfid={
+                "ok": False,
+                "sensor": "rfid",
+                "error": "missing",
+                "message": "RFID data was not collected.",
+            },
+            fingerprint={
+                "ok": False,
+                "sensor": "fingerprint",
+                "matched": False,
+                "error": "timeout",
+                "message": "Fingerprint service timed out.",
+            },
+            status_code=None,
+            raw=None,
+        )
+
+        self.client.post(
+            reverse("core:access-start"),
+            {
+                "user": self.user.id,
+                "resource": self.resource.id,
+                "tier": self.tier1_policy.tier,
+            },
+        )
+        session = AuthenticationSession.objects.get()
+
+        result_response = self.client.get(reverse("core:access-result", args=[session.id]))
+        self.assertContains(result_response, "Access denied")
+        self.assertContains(result_response, "Collection message")
+        self.assertContains(result_response, "Node-RED request timed out.")
+        self.assertContains(result_response, "RFID data was not collected.")
+
+    def test_access_result_unknown_session_returns_404(self):
+        response = self.client.get(reverse("core:access-result", args=[9999]))
+
+        self.assertEqual(response.status_code, 404)

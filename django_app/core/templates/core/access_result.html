@@ -66,6 +66,16 @@
     <h2 style="margin-top: 0;">Factor collection</h2>
     <ul class="detail-list">
         <li>
+            <span class="detail-label">Collection outcome</span>
+            {% if factor_collection_result.ok %}Completed{% else %}Issue detected{% endif %}
+        </li>
+        {% if factor_collection_result.message or factor_collection_result.error %}
+            <li>
+                <span class="detail-label">Collection message</span>
+                {{ factor_collection_result.message|default:factor_collection_result.error }}
+            </li>
+        {% endif %}
+        <li>
             <span class="detail-label">RFID</span>
             {% if factor_collection_result.rfid.ok %}
                 UID {{ factor_collection_result.rfid.uid }}
