@@ -1,66 +1,78 @@
 {% extends "core/base.html" %}
 
-{% block title %}Access | MFA Prototype{% endblock title %}
+{% block title %}Access | Access Control{% endblock title %}
 
 {% block content %}
 <section class="panel hero">
     <div class="hero-copy">
         <div class="eyebrow">Access</div>
-        <h1>Start access request</h1>
-        <p class="muted">Select a user, resource, and tier. Django handles the decision; Node-RED only collects hardware factors.</p>
-    </div>
-    <div class="actions">
-        <a class="button secondary" href="{% url 'core:enroll' %}">Enroll Credentials</a>
+        <h1>Start Access Request</h1>
+        <p class="muted">Select user, resource, and tier to begin.</p>
     </div>
 </section>
 
-<div class="split-layout">
-    <section class="panel">
-        <form method="post" action="{% url 'core:access-start' %}">
-            {% csrf_token %}
+<form method="post" action="{% url 'core:access-start' %}">
+    {% csrf_token %}
+    <div class="split-layout">
+        <section class="panel">
+            <div class="eyebrow">Request setup</div>
+            <h2 style="margin-top: 0;">Request details</h2>
             {{ form.non_field_errors }}
             <div class="form-grid">
-                {% for field in form %}
-                    <div class="form-field">
-                        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-                        {{ field }}
-                        {% if field.help_text %}
-                            <div class="muted" style="margin-top: 0.35rem;">{{ field.help_text }}</div>
+                <div class="form-field">
+                    <label for="{{ form.user.id_for_label }}">{{ form.user.label }}</label>
+                    {{ form.user }}
+                    {{ form.user.errors }}
+                </div>
+                <div class="form-field">
+                    <label for="{{ form.resource.id_for_label }}">{{ form.resource.label }}</label>
+                    {{ form.resource }}
+                    {{ form.resource.errors }}
+                </div>
+                <div class="form-field">
+                    <label for="{{ form.tier.id_for_label }}">{{ form.tier.label }}</label>
+                    {{ form.tier }}
+                    {{ form.tier.errors }}
+                </div>
+            </div>
+        </section>
+
+        <aside class="panel">
+            <div class="eyebrow">Required factors</div>
+            <h2 style="margin-top: 0;">Current tier</h2>
+            <p class="muted" id="tier-note">{{ tier_note }}</p>
+            <div class="detail-list" style="margin-bottom: 1rem;">
+                <div class="muted">Tier 1: Badge + Fingerprint</div>
+                <div class="muted">Tier 2: Badge + PIN</div>
+                <div class="muted">Tier 3: Badge + PIN + Degraded resource only</div>
+            </div>
+            <div class="factor-grid" id="factor-grid">
+                {% for card in factor_cards %}
+                    <article class="factor-card {{ card.state }}" data-factor-key="{{ card.key }}">
+                        <div class="factor-top">
+                            <h3>{{ card.label }}</h3>
+                            <span class="pill {% if card.state != 'neutral' %}{{ card.state }}{% endif %}" data-role="status">{{ card.status }}</span>
+                        </div>
+                        <p class="muted" data-role="detail" style="margin-bottom: 0.75rem;">{{ card.detail }}</p>
+                        {% if card.key == "pin" %}
+                            <div data-role="pin-input">
+                                <div class="form-field" style="margin-top: 0.5rem;">
+                                    <label for="{{ form.knowledge_factor.id_for_label }}">{{ form.knowledge_factor.label }}</label>
+                                    {{ form.knowledge_factor }}
+                                    {{ form.knowledge_factor.errors }}
+                                </div>
+                            </div>
                         {% endif %}
-                        {{ field.errors }}
-                    </div>
+                    </article>
                 {% endfor %}
             </div>
-            <div class="actions" style="margin-top: 1rem;">
-                <button type="submit">Run Access Attempt</button>
-            </div>
-        </form>
-    </section>
+        </aside>
+    </div>
 
-    <aside class="panel">
-        <div class="eyebrow">Factor status</div>
-        <h2 style="margin-top: 0;">What this tier needs</h2>
-        <p class="muted" id="tier-note">{{ tier_note }}</p>
-        <div class="factor-grid" id="factor-grid">
-            {% for card in factor_cards %}
-                <article class="factor-card {{ card.state }}" data-factor-key="{{ card.key }}">
-                    <div class="factor-top">
-                        <div>
-                            <h3>{{ card.label }}</h3>
-                            <div class="muted">{{ card.source }}</div>
-                        </div>
-                        <span class="pill {{ card.state }}" data-role="status">{{ card.status }}</span>
-                    </div>
-                    <p class="muted" data-role="detail" style="margin-bottom: 0;">{{ card.detail }}</p>
-                </article>
-            {% endfor %}
-        </div>
-        <div class="callout info" style="margin-top: 1rem;">
-            <strong>Node-RED endpoint</strong>
-            <div class="muted"><code>{{ node_red_base_url }}/api/auth/collect-factors</code></div>
-        </div>
-    </aside>
-</div>
+    <div class="actions" style="margin-top: 1rem;">
+        <button type="submit">Begin Access Check</button>
+    </div>
+</form>
 
 <script>
     (function () {
@@ -73,22 +85,22 @@
 
         const tierConfig = {
             basic: {
-                note: "Tier 1 uses RFID plus fingerprint.",
-                rfid: { state: "neutral", status: "Required", detail: "Collected from the badge reader." },
-                biometric: { state: "neutral", status: "Required", detail: "Required for Tier 1." },
-                pin: { state: "muted", status: "Not used", detail: "Only used for Tier 2 and Tier 3." }
+                note: "Tier 1: Badge + Fingerprint",
+                rfid: { state: "neutral", status: "Pending", detail: "Required", pinVisible: false },
+                biometric: { state: "neutral", status: "Pending", detail: "Required", pinVisible: false },
+                pin: { state: "muted", status: "Not Required", detail: "Not required", pinVisible: false }
             },
             elevated: {
-                note: "Tier 2 uses RFID plus PIN/passcode.",
-                rfid: { state: "neutral", status: "Required", detail: "Collected from the badge reader." },
-                biometric: { state: "muted", status: "Not used", detail: "Ignored for Tier 2 and Tier 3." },
-                pin: { state: "neutral", status: "Required", detail: "Checked in Django after RFID." }
+                note: "Tier 2: Badge + PIN",
+                rfid: { state: "neutral", status: "Pending", detail: "Required", pinVisible: false },
+                biometric: { state: "muted", status: "Not Required", detail: "Not required", pinVisible: false },
+                pin: { state: "neutral", status: "Pending", detail: "Required", pinVisible: true }
             },
             high: {
-                note: "Tier 3 uses RFID plus PIN/passcode and a degraded-approved resource.",
-                rfid: { state: "neutral", status: "Required", detail: "Collected from the badge reader." },
-                biometric: { state: "muted", status: "Not used", detail: "Ignored for Tier 2 and Tier 3." },
-                pin: { state: "neutral", status: "Required", detail: "Checked in Django after RFID." }
+                note: "Tier 3: Badge + PIN + Degraded resource only",
+                rfid: { state: "neutral", status: "Pending", detail: "Required", pinVisible: false },
+                biometric: { state: "muted", status: "Not Required", detail: "Not required", pinVisible: false },
+                pin: { state: "neutral", status: "Pending", detail: "Required", pinVisible: true }
             }
         };
 
@@ -102,9 +114,14 @@
                     return;
                 }
                 card.className = "factor-card " + factorConfig.state;
-                card.querySelector("[data-role='status']").className = "pill " + factorConfig.state;
-                card.querySelector("[data-role='status']").textContent = factorConfig.status;
+                const statusBadge = card.querySelector("[data-role='status']");
+                statusBadge.className = "pill" + (factorConfig.state !== "neutral" ? " " + factorConfig.state : "");
+                statusBadge.textContent = factorConfig.status;
                 card.querySelector("[data-role='detail']").textContent = factorConfig.detail;
+                const pinInput = card.querySelector("[data-role='pin-input']");
+                if (pinInput) {
+                    pinInput.style.display = factorConfig.pinVisible ? "block" : "none";
+                }
             });
         }
 

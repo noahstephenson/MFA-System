@@ -30,7 +30,7 @@ class AccessStartForm(forms.Form):
     )
     knowledge_factor = forms.CharField(
         required=False,
-        label="Knowledge factor",
+        label="PIN",
         help_text="Required for Tier 2 and Tier 3.",
         widget=forms.PasswordInput(render_value=True),
         strip=True,
@@ -70,7 +70,7 @@ class EnrollmentForm(forms.Form):
     credential_type = forms.ChoiceField(
         choices=Credential.CredentialType.choices,
         label="Credential type",
-        help_text="RFID uses a UID, biometric uses a fingerprint ID, and PIN stores the Django-side knowledge factor.",
+        help_text="Badge uses a UID, biometric uses a fingerprint ID, and PIN stores the knowledge factor.",
     )
     identifier = forms.CharField(
         label="Identifier / value",

@@ -1,13 +1,13 @@
 {% extends "core/base.html" %}
 
-{% block title %}Home | MFA Prototype{% endblock title %}
+{% block title %}Home | Access Control{% endblock title %}
 
 {% block content %}
 <section class="panel hero">
     <div class="hero-copy">
         <div class="eyebrow">Demo ATAK</div>
-        <h1>Operator console</h1>
-        <p class="muted">Choose the next step: run an access request or enroll the credentials needed for the demo.</p>
+        <h1>Access Control</h1>
+        <p class="muted">Choose the next step for the live demo.</p>
     </div>
 </section>
 
@@ -15,12 +15,12 @@
     <a class="feature-card" href="{% url 'core:access-start' %}">
         <div class="eyebrow">Access</div>
         <h2>Start Access Request</h2>
-        <p class="muted">Run Tier 1, Tier 2, or Tier 3 against the current Node-RED flow.</p>
+        <p class="muted">Run Tier 1, Tier 2, or Tier 3 checks for the selected user and resource.</p>
     </a>
     <a class="feature-card" href="{% url 'core:enroll' %}">
         <div class="eyebrow">Enrollment</div>
         <h2>Enroll Credentials</h2>
-        <p class="muted">Store RFID UIDs, fingerprint IDs, and PIN/passcode values for the demo users.</p>
+        <p class="muted">Store badge IDs, fingerprint IDs, and PIN values for the demo users.</p>
     </a>
 </div>
 

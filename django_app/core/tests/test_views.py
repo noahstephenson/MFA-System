@@ -59,7 +59,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         response = self.client.get(reverse("core:home"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Operator console")
+        self.assertContains(response, "Access Control")
         self.assertContains(response, "Demo ATAK")
         self.assertContains(response, "Start Access Request")
         self.assertContains(response, "Enroll Credentials")
@@ -72,7 +72,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertContains(response, "Credential type")
         self.assertContains(response, "Identifier / value")
         self.assertContains(response, "Save Credential")
-        self.assertContains(response, "Use the UID returned by the Node-RED RFID flow.")
+        self.assertContains(response, "Use the badge UID captured during enrollment.")
 
     def test_enrollment_submission_creates_credential_and_redirects_to_selected_user(self):
         response = self.client.post(
@@ -105,16 +105,16 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         response = self.client.get(reverse("core:access-start"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Start access request")
-        self.assertContains(response, "Run Access Attempt")
+        self.assertContains(response, "Start Access Request")
+        self.assertContains(response, "Begin Access Check")
         self.assertContains(response, "User")
         self.assertContains(response, "Resource")
         self.assertContains(response, "Tier")
-        self.assertContains(response, "Knowledge factor")
-        self.assertContains(response, "What this tier needs")
-        self.assertContains(response, "RFID")
+        self.assertContains(response, "PIN")
+        self.assertContains(response, "Current tier")
+        self.assertContains(response, "Badge")
         self.assertContains(response, "Fingerprint")
-        self.assertContains(response, "Tier 1 uses RFID plus fingerprint.")
+        self.assertContains(response, "Tier 1: Badge + Fingerprint")
 
     def test_access_start_page_shows_tier2_requirements_cleanly(self):
         response = self.client.post(
@@ -127,10 +127,9 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Provide the knowledge factor for Tier 2 and Tier 3 access attempts.")
-        self.assertContains(response, "Tier 2 uses RFID plus PIN/passcode.")
-        self.assertContains(response, "Ignored for Tier 2 and Tier 3.")
-        self.assertContains(response, "Checked in Django after RFID.")
+        self.assertContains(response, "Tier 2: Badge + PIN")
+        self.assertContains(response, "PIN")
+        self.assertContains(response, "Not Required")
         self.assertEqual(AuthenticationSession.objects.count(), 0)
 
     def test_access_start_page_shows_tier3_requirements_cleanly(self):
@@ -144,8 +143,8 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Tier 3 uses RFID plus PIN/passcode and a degraded-approved resource.")
-        self.assertContains(response, "Provide the knowledge factor for Tier 2 and Tier 3 access attempts.")
+        self.assertContains(response, "Tier 3: Badge + PIN + Degraded resource only")
+        self.assertContains(response, "PIN")
         self.assertEqual(AuthenticationSession.objects.count(), 0)
 
     def test_invalid_form_submission_rerenders_cleanly_with_useful_errors(self):
@@ -160,7 +159,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Select a valid choice")
-        self.assertContains(response, "Start access request")
+        self.assertContains(response, "Start Access Request")
         self.assertEqual(AuthenticationSession.objects.count(), 0)
 
     @patch("core.services.node_red_client.collect_factors")
@@ -180,9 +179,9 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         result_response = self.client.get(reverse("core:access-result", args=[session.id]))
         self.assertContains(result_response, "Access granted")
         self.assertContains(result_response, "Accepted")
-        self.assertContains(result_response, "Fingerprint ID 4 matched the enrolled credential.")
-        self.assertContains(result_response, "Knowledge factor")
-        self.assertContains(result_response, "Not used")
+        self.assertContains(result_response, "Fingerprint ID 4")
+        self.assertContains(result_response, "PIN")
+        self.assertContains(result_response, "Not Required")
 
     @patch("core.services.node_red_client.collect_factors")
     def test_tier3_denial_result_page_is_understandable(self, mock_collect):
@@ -210,7 +209,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertContains(result_response, "Authorization result")
         self.assertContains(result_response, "Selected resource is not approved for Tier 3 degraded access.")
         self.assertContains(result_response, "Fingerprint")
-        self.assertContains(result_response, "Not used")
+        self.assertContains(result_response, "Not Required")
 
     @patch("core.services.node_red_client.collect_factors")
     def test_result_page_makes_external_node_red_failure_understandable(self, mock_collect):
@@ -247,8 +246,8 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         result_response = self.client.get(reverse("core:access-result", args=[session.id]))
         self.assertContains(result_response, "Collection message")
-        self.assertContains(result_response, "Node-RED request timed out.")
-        self.assertContains(result_response, "RFID data was not collected.")
+        self.assertContains(result_response, "Factor service timed out.")
+        self.assertContains(result_response, "Badge scan unavailable.")
         self.assertContains(result_response, "Fingerprint service timed out.")
 
     def test_access_result_unknown_session_returns_404(self):

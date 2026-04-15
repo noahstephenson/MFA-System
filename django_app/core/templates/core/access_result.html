@@ -1,6 +1,6 @@
 {% extends "core/base.html" %}
 
-{% block title %}Access Result {{ session.id }} | MFA Prototype{% endblock title %}
+{% block title %}Access Result {{ session.id }} | Access Control{% endblock title %}
 
 {% block content %}
 <section class="panel hero">
@@ -11,7 +11,6 @@
     </div>
     <div class="actions">
         <a class="button" href="{% url 'core:access-start' %}">Start Another Attempt</a>
-        <a class="button secondary" href="{% url 'core:enroll' %}">Enroll Credentials</a>
     </div>
 </section>
 
@@ -20,11 +19,8 @@
         {% for card in factor_cards %}
             <article class="factor-card {{ card.state }}">
                 <div class="factor-top">
-                    <div>
-                        <h3>{{ card.label }}</h3>
-                        <div class="muted">{{ card.source }}</div>
-                    </div>
-                    <span class="pill {{ card.state }}">{{ card.status }}</span>
+                    <h3>{{ card.label }}</h3>
+                    <span class="pill {% if card.state != 'neutral' %}{{ card.state }}{% endif %}">{{ card.status }}</span>
                 </div>
                 <p class="muted" style="margin-bottom: 0;">{{ card.detail }}</p>
             </article>
@@ -43,11 +39,23 @@
             </li>
             <li>
                 <span class="detail-label">Required factors</span>
-                {{ authentication_result.required_factor_types|join:", " }}
+                {% if authentication_result.required_factor_types %}
+                    {% for factor_type in authentication_result.required_factor_types %}
+                        {% if factor_type == "rfid" %}Badge{% elif factor_type == "biometric" %}Fingerprint{% elif factor_type == "pin" %}PIN{% else %}{{ factor_type }}{% endif %}{% if not forloop.last %}, {% endif %}
+                    {% endfor %}
+                {% else %}
+                    None
+                {% endif %}
             </li>
             <li>
                 <span class="detail-label">Verified factors</span>
-                {{ authentication_result.verified_factor_types|join:", "|default:"None" }}
+                {% if authentication_result.verified_factor_types %}
+                    {% for factor_type in authentication_result.verified_factor_types %}
+                        {% if factor_type == "rfid" %}Badge{% elif factor_type == "biometric" %}Fingerprint{% elif factor_type == "pin" %}PIN{% else %}{{ factor_type }}{% endif %}{% if not forloop.last %}, {% endif %}
+                    {% endfor %}
+                {% else %}
+                    None
+                {% endif %}
             </li>
             <li>
                 <span class="detail-label">Message</span>
@@ -87,29 +95,21 @@
         <ul class="detail-list">
             <li>
                 <span class="detail-label">Collection outcome</span>
-                {% if factor_collection_result.ok %}Completed{% else %}Issue detected{% endif %}
+                {% if collection_summary.ok %}Completed{% else %}Issue detected{% endif %}
             </li>
-            {% if factor_collection_result.message or factor_collection_result.error %}
+            {% if collection_summary.message %}
                 <li>
                     <span class="detail-label">Collection message</span>
-                    {{ factor_collection_result.message|default:factor_collection_result.error }}
+                    {{ collection_summary.message }}
                 </li>
             {% endif %}
             <li>
-                <span class="detail-label">RFID</span>
-                {% if factor_collection_result.rfid.ok %}
-                    UID {{ factor_collection_result.rfid.uid }}
-                {% else %}
-                    {{ factor_collection_result.rfid.message|default:"RFID result unavailable." }}
-                {% endif %}
+                <span class="detail-label">Badge</span>
+                {{ collection_summary.badge_detail }}
             </li>
             <li>
                 <span class="detail-label">Fingerprint</span>
-                {% if factor_collection_result.fingerprint.ok %}
-                    Match {{ factor_collection_result.fingerprint.finger_id }}
-                {% else %}
-                    {{ factor_collection_result.fingerprint.message|default:"Fingerprint result unavailable." }}
-                {% endif %}
+                {{ collection_summary.fingerprint_detail }}
             </li>
         </ul>
     </section>
@@ -148,18 +148,18 @@
 
 <section class="panel">
     <div class="eyebrow">Audit</div>
-    <h2 style="margin-top: 0;">Recent audit events</h2>
-    {% if audit_events %}
+    <h2 style="margin-top: 0;">Recent activity</h2>
+    {% if audit_entries %}
         <ul class="detail-list">
-            {% for event in audit_events %}
+            {% for event in audit_entries %}
                 <li>
-                    <span class="detail-label">{{ event.event_type }}</span>
+                    <span class="detail-label">{{ event.label }}</span>
                     {{ event.message }}
                 </li>
             {% endfor %}
         </ul>
     {% else %}
-        <p class="muted">No audit events were recorded for this session.</p>
+        <p class="muted">No activity was recorded for this session.</p>
     {% endif %}
 </section>
 {% endblock content %}

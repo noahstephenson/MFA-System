@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -57,11 +56,30 @@ def _selected_tier_from_form(form):
 
 def _tier_note(selected_tier):
     notes = {
-        AccessPolicy.Tier.BASIC: "Tier 1 uses RFID plus fingerprint.",
-        AccessPolicy.Tier.ELEVATED: "Tier 2 uses RFID plus PIN/passcode.",
-        AccessPolicy.Tier.HIGH: "Tier 3 uses RFID plus PIN/passcode and a degraded-approved resource.",
+        AccessPolicy.Tier.BASIC: "Tier 1: Badge + Fingerprint",
+        AccessPolicy.Tier.ELEVATED: "Tier 2: Badge + PIN",
+        AccessPolicy.Tier.HIGH: "Tier 3: Badge + PIN + Degraded resource only",
     }
     return notes.get(selected_tier, "Select a tier to see the required factors.")
+
+
+def _operator_message(message):
+    cleaned = str(message or "").strip()
+    if not cleaned:
+        return ""
+
+    rewrites = {
+        "Node-RED request timed out.": "Factor service timed out.",
+        "Node-RED returned an invalid factor payload.": "Factor data was incomplete.",
+        "Node-RED did not return any factor data.": "No factor data was returned.",
+        "RFID data was not collected.": "Badge scan unavailable.",
+        "RFID data was not returned.": "Badge scan unavailable.",
+        "Fingerprint data was not returned.": "Fingerprint result unavailable.",
+    }
+    if cleaned in rewrites:
+        return rewrites[cleaned]
+
+    return cleaned.replace("Node-RED", "Factor service").replace("RFID", "Badge")
 
 
 def _access_factor_cards(selected_tier):
@@ -69,33 +87,28 @@ def _access_factor_cards(selected_tier):
     return [
         {
             "key": "rfid",
-            "label": "RFID",
-            "source": "Node-RED",
+            "label": "Badge",
             "state": "neutral",
-            "status": "Required",
-            "detail": "Collected from the badge reader.",
+            "status": "Pending",
+            "detail": "Required",
         },
         {
             "key": "biometric",
             "label": "Fingerprint",
-            "source": "Node-RED",
             "state": "neutral" if Credential.CredentialType.BIOMETRIC in required_factor_types else "muted",
-            "status": "Required"
+            "status": "Pending"
             if Credential.CredentialType.BIOMETRIC in required_factor_types
-            else "Not used",
-            "detail": "Required for Tier 1."
+            else "Not Required",
+            "detail": "Required"
             if Credential.CredentialType.BIOMETRIC in required_factor_types
-            else "Ignored for Tier 2 and Tier 3.",
+            else "Not required",
         },
         {
             "key": "pin",
-            "label": "Knowledge factor",
-            "source": "Django",
+            "label": "PIN",
             "state": "neutral" if Credential.CredentialType.PIN in required_factor_types else "muted",
-            "status": "Required" if Credential.CredentialType.PIN in required_factor_types else "Not used",
-            "detail": "Checked in Django after RFID."
-            if Credential.CredentialType.PIN in required_factor_types
-            else "Only used for Tier 2 and Tier 3.",
+            "status": "Pending" if Credential.CredentialType.PIN in required_factor_types else "Not Required",
+            "detail": "Enter PIN" if Credential.CredentialType.PIN in required_factor_types else "Not required",
         },
     ]
 
@@ -131,23 +144,21 @@ def _factor_cards_for_result(session, factor_collection_result, authentication_r
     if Credential.CredentialType.RFID in verified_factor_types:
         cards.append(
             {
-                "label": "RFID",
-                "source": "Node-RED",
+                "label": "Badge",
                 "state": "success",
                 "status": "Accepted",
-                "detail": f"UID {rfid_result.get('uid', 'unknown')} matched the enrolled credential.",
+                "detail": f"UID {rfid_result.get('uid', 'unknown')}",
             }
         )
     else:
         cards.append(
             {
-                "label": "RFID",
-                "source": "Node-RED",
+                "label": "Badge",
                 "state": "error",
                 "status": "Failed",
                 "detail": submitted_factors.get(Credential.CredentialType.RFID, {}).get("reason_message")
                 or rfid_result.get("message")
-                or "RFID data was not collected.",
+                or "Badge scan not available.",
             }
         )
 
@@ -156,32 +167,29 @@ def _factor_cards_for_result(session, factor_collection_result, authentication_r
             cards.append(
                 {
                     "label": "Fingerprint",
-                    "source": "Node-RED",
                     "state": "success",
                     "status": "Accepted",
-                    "detail": f"Fingerprint ID {fingerprint_result.get('finger_id', 'unknown')} matched the enrolled credential.",
+                    "detail": f"Fingerprint ID {fingerprint_result.get('finger_id', 'unknown')}",
                 }
             )
         else:
             cards.append(
                 {
                     "label": "Fingerprint",
-                    "source": "Node-RED",
                     "state": "error",
                     "status": "Failed",
                     "detail": submitted_factors.get(Credential.CredentialType.BIOMETRIC, {}).get("reason_message")
                     or fingerprint_result.get("message")
-                    or "Fingerprint data was not collected.",
+                    or "Fingerprint not available.",
                 }
             )
     else:
         cards.append(
             {
                 "label": "Fingerprint",
-                "source": "Node-RED",
                 "state": "muted",
-                "status": "Not used",
-                "detail": "Ignored for Tier 2 and Tier 3.",
+                "status": "Not Required",
+                "detail": "Not required",
             }
         )
 
@@ -189,36 +197,79 @@ def _factor_cards_for_result(session, factor_collection_result, authentication_r
         if Credential.CredentialType.PIN in verified_factor_types:
             cards.append(
                 {
-                    "label": "Knowledge factor",
-                    "source": "Django",
+                    "label": "PIN",
                     "state": "success",
                     "status": "Accepted",
-                    "detail": "PIN/passcode matched the enrolled credential.",
+                    "detail": "PIN accepted",
                 }
             )
         else:
             cards.append(
                 {
-                    "label": "Knowledge factor",
-                    "source": "Django",
+                    "label": "PIN",
                     "state": "error",
                     "status": "Failed",
                     "detail": knowledge_submission.get("reason_message")
-                    or "Knowledge factor was not accepted.",
+                    or "PIN not accepted.",
                 }
             )
     else:
         cards.append(
             {
-                "label": "Knowledge factor",
-                "source": "Django",
+                "label": "PIN",
                 "state": "muted",
-                "status": "Not used",
-                "detail": "Only required for Tier 2 and Tier 3.",
+                "status": "Not Required",
+                "detail": "Not required",
             }
         )
 
     return cards
+
+
+def _operator_collection_summary(factor_collection_result):
+    collection = factor_collection_result or {}
+    rfid_result = collection.get("rfid") or {}
+    fingerprint_result = collection.get("fingerprint") or {}
+
+    if rfid_result.get("ok"):
+        badge_detail = f"UID {rfid_result.get('uid', 'unknown')}"
+    else:
+        badge_detail = _operator_message(rfid_result.get("message")) or "Badge scan unavailable."
+
+    if fingerprint_result.get("ok"):
+        fingerprint_detail = f"Match {fingerprint_result.get('finger_id', 'unknown')}"
+    else:
+        fingerprint_detail = _operator_message(fingerprint_result.get("message")) or "Fingerprint result unavailable."
+
+    return {
+        "ok": bool(collection.get("ok")),
+        "message": _operator_message(collection.get("message") or collection.get("error")),
+        "badge_detail": badge_detail,
+        "fingerprint_detail": fingerprint_detail,
+    }
+
+
+def _operator_audit_entries(audit_events):
+    labels = {
+        "session_started": "Request",
+        "factor_collection_completed": "Factors",
+        "factor_collection_failed": "Factors",
+        "authentication_succeeded": "Authentication",
+        "authentication_failed": "Authentication",
+        "authorization_granted": "Authorization",
+        "authorization_denied": "Authorization",
+        "access_granted": "Decision",
+        "access_denied": "Decision",
+    }
+    entries = []
+    for event in audit_events:
+        entries.append(
+            {
+                "label": labels.get(event.event_type, "Audit"),
+                "message": _operator_message(event.message),
+            }
+        )
+    return entries
 
 
 def home(request):
@@ -258,7 +309,6 @@ def access_start(request):
             "selected_tier": selected_tier,
             "tier_note": _tier_note(selected_tier),
             "factor_cards": _access_factor_cards(selected_tier),
-            "node_red_base_url": settings.NODE_RED_BASE_URL,
         },
     )
 
@@ -269,14 +319,15 @@ def access_result(request, session_id):
     factor_collection_result = (session.details or {}).get("factor_collection_result") or {}
     authentication_result = (session.details or {}).get("authentication_result") or {}
     authorization_result = (session.details or {}).get("authorization_result") or {}
-    result_message = (session.details or {}).get("result_message") or "Access attempt completed."
+    result_message = _operator_message((session.details or {}).get("result_message")) or "Access attempt completed."
     return render(
         request,
         "core/access_result.html",
         {
             "session": session,
-            "audit_events": audit_events,
+            "audit_entries": _operator_audit_entries(audit_events),
             "factor_collection_result": factor_collection_result,
+            "collection_summary": _operator_collection_summary(factor_collection_result),
             "authentication_result": authentication_result,
             "authorization_result": authorization_result,
             "factor_cards": _factor_cards_for_result(session, factor_collection_result, authentication_result),

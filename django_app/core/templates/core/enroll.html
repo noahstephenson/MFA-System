@@ -1,13 +1,13 @@
 {% extends "core/base.html" %}
 
-{% block title %}Enroll | MFA Prototype{% endblock title %}
+{% block title %}Enroll | Access Control{% endblock title %}
 
 {% block content %}
 <section class="panel hero">
     <div class="hero-copy">
         <div class="eyebrow">Enrollment</div>
         <h1>Enroll credentials</h1>
-        <p class="muted">Store the values Django needs to evaluate access attempts for the demo.</p>
+        <p class="muted">Store the values used during access checks.</p>
     </div>
     <div class="actions">
         <a class="button secondary" href="{% url 'core:access-start' %}">Go To Access</a>
@@ -42,10 +42,10 @@
         <div class="factor-grid">
             <article class="factor-card neutral">
                 <div class="factor-top">
-                    <h3>RFID</h3>
+                    <h3>Badge</h3>
                     <span class="pill muted">UID</span>
                 </div>
-                <p class="muted" style="margin-bottom: 0;">Use the UID returned by the Node-RED RFID flow.</p>
+                <p class="muted" style="margin-bottom: 0;">Use the badge UID captured during enrollment.</p>
             </article>
             <article class="factor-card neutral">
                 <div class="factor-top">
@@ -56,10 +56,10 @@
             </article>
             <article class="factor-card neutral">
                 <div class="factor-top">
-                    <h3>Knowledge factor</h3>
+                    <h3>PIN</h3>
                     <span class="pill muted">PIN</span>
                 </div>
-                <p class="muted" style="margin-bottom: 0;">Use the PIN or passcode Django should verify for Tier 2 and Tier 3.</p>
+                <p class="muted" style="margin-bottom: 0;">Use the PIN or passcode required for Tier 2 and Tier 3.</p>
             </article>
         </div>
     </aside>
