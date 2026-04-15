@@ -8,6 +8,7 @@ class ProtectedResource(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     active = models.BooleanField(default=True)
+    allow_degraded_access = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -20,9 +21,9 @@ class ProtectedResource(models.Model):
 
 class AccessPolicy(models.Model):
     class Tier(models.TextChoices):
-        BASIC = "basic", "Basic"
-        ELEVATED = "elevated", "Elevated"
-        HIGH = "high", "High"
+        BASIC = "basic", "Tier 1"
+        ELEVATED = "elevated", "Tier 2"
+        HIGH = "high", "Tier 3"
 
     resource = models.ForeignKey(
         ProtectedResource,
@@ -49,6 +50,18 @@ class AccessPolicy(models.Model):
 
     def __str__(self):
         return f"{self.resource.name} - {self.name}"
+
+    @property
+    def required_factor_types(self):
+        return tier_requirement_definition(self.tier)["required_factor_types"]
+
+    @property
+    def requires_knowledge_factor(self):
+        return tier_requirement_definition(self.tier)["requires_knowledge_factor"]
+
+    @property
+    def requires_degraded_access(self):
+        return tier_requirement_definition(self.tier)["requires_degraded_access"]
 
 
 class Credential(models.Model):
@@ -78,6 +91,65 @@ class Credential(models.Model):
     def __str__(self):
         name = self.label or self.identifier
         return f"{self.user} - {self.get_credential_type_display()} - {name}"
+
+
+def normalize_access_tier(value):
+    normalized = str(value or "").strip().lower()
+    aliases = {
+        "basic": AccessPolicy.Tier.BASIC,
+        "tier1": AccessPolicy.Tier.BASIC,
+        "tier_1": AccessPolicy.Tier.BASIC,
+        "tier 1": AccessPolicy.Tier.BASIC,
+        "1": AccessPolicy.Tier.BASIC,
+        "elevated": AccessPolicy.Tier.ELEVATED,
+        "tier2": AccessPolicy.Tier.ELEVATED,
+        "tier_2": AccessPolicy.Tier.ELEVATED,
+        "tier 2": AccessPolicy.Tier.ELEVATED,
+        "2": AccessPolicy.Tier.ELEVATED,
+        "high": AccessPolicy.Tier.HIGH,
+        "tier3": AccessPolicy.Tier.HIGH,
+        "tier_3": AccessPolicy.Tier.HIGH,
+        "tier 3": AccessPolicy.Tier.HIGH,
+        "3": AccessPolicy.Tier.HIGH,
+    }
+    return aliases.get(normalized, "")
+
+
+def tier_requirement_definition(tier):
+    normalized_tier = normalize_access_tier(tier)
+    return {
+        AccessPolicy.Tier.BASIC: {
+            "required_factor_types": [
+                Credential.CredentialType.RFID,
+                Credential.CredentialType.BIOMETRIC,
+            ],
+            "requires_knowledge_factor": False,
+            "requires_degraded_access": False,
+        },
+        AccessPolicy.Tier.ELEVATED: {
+            "required_factor_types": [
+                Credential.CredentialType.RFID,
+                Credential.CredentialType.PIN,
+            ],
+            "requires_knowledge_factor": True,
+            "requires_degraded_access": False,
+        },
+        AccessPolicy.Tier.HIGH: {
+            "required_factor_types": [
+                Credential.CredentialType.RFID,
+                Credential.CredentialType.PIN,
+            ],
+            "requires_knowledge_factor": True,
+            "requires_degraded_access": True,
+        },
+    }.get(
+        normalized_tier,
+        {
+            "required_factor_types": [],
+            "requires_knowledge_factor": False,
+            "requires_degraded_access": False,
+        },
+    )
 
 
 class AuthenticationSession(models.Model):
@@ -160,9 +232,14 @@ class AuthenticationSession(models.Model):
 
     @property
     def required_factor_count(self):
-        if self.policy is None:
-            return 1
-        return self.policy.required_factor_count
+        if self.policy is not None:
+            return len(self.policy.required_factor_types)
+
+        selected_tier = (self.details or {}).get("selected_tier")
+        required_factor_types = tier_requirement_definition(selected_tier)["required_factor_types"]
+        if required_factor_types:
+            return len(required_factor_types)
+        return 1
 
     @property
     def accepted_factor_keys(self):

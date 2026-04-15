@@ -21,7 +21,7 @@ class CoreModelTests(CoreTestDataMixin, TestCase):
         )
 
         self.assertEqual(str(self.resource), "Server Room")
-        self.assertEqual(str(self.policy), "Server Room - Default Policy")
+        self.assertEqual(str(self.policy), "Server Room - Tier 1 Policy")
         self.assertEqual(str(self.rfid), "alice - RFID - Alice badge")
         self.assertEqual(str(session), f"Session {session.pk} - Server Room - Pending")
         self.assertEqual(str(audit_event), "Info - session_started")
@@ -29,7 +29,9 @@ class CoreModelTests(CoreTestDataMixin, TestCase):
     def test_credential_belongs_to_user_and_resource_policy_relationship_is_available(self):
         self.assertEqual(self.rfid.user, self.user)
         self.assertEqual(self.policy.resource, self.resource)
-        self.assertEqual(self.resource.policies.count(), 1)
+        self.assertEqual(self.resource.policies.count(), 3)
+        self.assertFalse(self.resource.allow_degraded_access)
+        self.assertTrue(self.degraded_resource.allow_degraded_access)
 
     def test_session_progress_properties_read_from_details(self):
         session = AuthenticationSession.objects.create(

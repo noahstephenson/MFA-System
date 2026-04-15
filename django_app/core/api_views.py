@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 
-from .models import AccessPolicy
+from .models import AccessPolicy, normalize_access_tier, tier_requirement_definition
 from .services import run_node_red_access_attempt
 
 
@@ -56,13 +56,23 @@ def _parse_positive_int(data, field_name, *, required=True):
 
 
 def _parse_tier(data, field_name="tier"):
-    value = str(data.get(field_name) or "").strip().lower()
+    value = normalize_access_tier(data.get(field_name))
     valid_tiers = {tier_value for tier_value, _label in AccessPolicy.Tier.choices}
     if not value:
         raise ValidationError({field_name: ["This field is required."]})
     if value not in valid_tiers:
         raise ValidationError({field_name: ["Select a valid tier."]})
     return value
+
+
+def _parse_knowledge_factor(data, field_name="knowledge_factor"):
+    value = str(data.get(field_name) or "").strip()
+    return value
+
+
+def _validate_knowledge_factor_for_tier(tier, knowledge_factor, field_name="knowledge_factor"):
+    if tier_requirement_definition(tier)["requires_knowledge_factor"] and not knowledge_factor:
+        raise ValidationError({field_name: ["This field is required for Tier 2 and Tier 3."]})
 
 
 def _request_provenance(request):
@@ -104,17 +114,21 @@ def _session_payload(request, session):
     return {
         "id": session.id,
         "user": session.user.username if session.user else None,
+        "resource": session.resource.name,
         "tier": session.policy.tier if session.policy else session_details.get("selected_tier"),
         "policy": session.policy.name if session.policy else None,
         "status": session.status,
         "decision": session.decision,
         "required_factor_count": session.required_factor_count,
+        "required_factor_types": session_details.get("required_factor_types") or [],
         "accepted_factor_count": session.accepted_factor_count,
         "remaining_factor_count": session.remaining_factor_count,
         "submitted_factors": session.submitted_factors,
         "is_complete": session.is_complete,
         "is_access_granted": session.is_access_granted,
         "factor_collection_result": (session.details or {}).get("factor_collection_result") or None,
+        "authentication": session_details.get("authentication_result") or None,
+        "authorization": session_details.get("authorization_result") or None,
         "result_url": request.build_absolute_uri(reverse("core:access-result", args=[session.id])),
     }
 
@@ -130,10 +144,16 @@ def api_access_start(request):
 
     try:
         data = _parse_json_body(request)
+        resource_id = _parse_positive_int(data, "resource_id")
+        user_id = _parse_positive_int(data, "user_id")
+        tier = _parse_tier(data)
+        knowledge_factor = _parse_knowledge_factor(data)
+        _validate_knowledge_factor_for_tier(tier, knowledge_factor)
         result = run_node_red_access_attempt(
-            user_id=_parse_positive_int(data, "user_id"),
-            tier=_parse_tier(data),
-            policy_id=_parse_positive_int(data, "policy_id", required=False),
+            resource_id=resource_id,
+            user_id=user_id,
+            tier=tier,
+            knowledge_factor=knowledge_factor,
             request_provenance=_request_provenance(request),
         )
     except ValidationError as exc:

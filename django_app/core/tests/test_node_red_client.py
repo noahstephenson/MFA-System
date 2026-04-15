@@ -1,10 +1,15 @@
 import json
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
 import requests
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
+from django.urls import reverse
 
 from .. import node_red_client
+from .base import CoreTestDataMixin
 
 
 class FakeResponse:
@@ -18,6 +23,86 @@ class FakeResponse:
         if self._json_error is not None:
             raise self._json_error
         return self._payload
+
+
+class RecordingNodeRedServer:
+    def __init__(self, routes):
+        self.routes = routes
+        self.requests = []
+        self._httpd = None
+        self._thread = None
+        self.base_url = None
+
+    def __enter__(self):
+        parent = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                parent._handle(self)
+
+            def log_message(self, format, *args):
+                return
+
+        self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.base_url = f"http://127.0.0.1:{self._httpd.server_port}"
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._httpd is not None:
+            self._httpd.shutdown()
+            self._httpd.server_close()
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+
+    def _handle(self, handler):
+        content_length = int(handler.headers.get("Content-Length", "0"))
+        raw_body = handler.rfile.read(content_length) if content_length else b""
+        body_text = raw_body.decode("utf-8", errors="replace")
+        try:
+            body_json = json.loads(body_text or "{}")
+        except ValueError:
+            body_json = None
+
+        request_record = {
+            "method": handler.command,
+            "path": handler.path,
+            "headers": dict(handler.headers.items()),
+            "body_text": body_text,
+            "body_json": body_json,
+        }
+        self.requests.append(request_record)
+
+        route = self.routes.get((handler.command, handler.path))
+        if route is None:
+            response = {
+                "status": 404,
+                "headers": {"Content-Type": "application/json"},
+                "body_text": json.dumps({"error": "not_found", "message": "Route not configured."}),
+            }
+        elif callable(route):
+            response = route(request_record)
+        else:
+            response = route
+
+        status = response.get("status", 200)
+        headers = dict(response.get("headers", {}))
+        if "Content-Type" not in headers:
+            headers["Content-Type"] = "application/json"
+        body_text = response.get("body_text")
+        if body_text is None:
+            body = response.get("body", {})
+            body_text = json.dumps(body)
+
+        handler.send_response(status)
+        for header_name, header_value in headers.items():
+            handler.send_header(header_name, header_value)
+        handler.end_headers()
+        try:
+            handler.wfile.write(body_text.encode("utf-8"))
+        except OSError:
+            pass
 
 
 @override_settings(NODE_RED_BASE_URL="http://127.0.0.1:1880", NODE_RED_TIMEOUT=2)
@@ -137,3 +222,179 @@ class NodeRedClientTests(SimpleTestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"], "timeout")
         self.assertEqual(result["message"], "sensor stalled")
+
+    def test_collect_factors_real_http_request_uses_expected_path_headers_and_json(self):
+        with RecordingNodeRedServer(
+            {
+                ("POST", "/api/auth/collect-factors"): {
+                    "status": 200,
+                    "body": {
+                        "ok": True,
+                        "message": "",
+                        "rfid": {"ok": True, "sensor": "rfid", "uid": "CARD-1001", "message": ""},
+                        "fingerprint": {
+                            "ok": True,
+                            "sensor": "fingerprint",
+                            "matched": True,
+                            "finger_id": 4,
+                            "confidence": 87,
+                            "message": "",
+                        },
+                    },
+                }
+            }
+        ) as server:
+            with self.settings(
+                NODE_RED_BASE_URL=server.base_url,
+                NODE_RED_TIMEOUT=2,
+                NODE_RED_SHARED_SECRET="node-red-secret",
+            ):
+                outbound_payload = {
+                    "session_id": 7,
+                    "resource_id": 3,
+                    "user_id": 4,
+                    "policy_id": 9,
+                    "required_factor_count": 2,
+                }
+                result = node_red_client.collect_factors(outbound_payload)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["rfid"]["ok"])
+        self.assertTrue(result["fingerprint"]["ok"])
+        self.assertEqual(len(server.requests), 1)
+        request_record = server.requests[0]
+        self.assertEqual(request_record["path"], "/api/auth/collect-factors")
+        self.assertEqual(request_record["headers"]["X-API-Key"], "node-red-secret")
+        self.assertEqual(request_record["headers"]["Content-Type"], "application/json")
+        self.assertEqual(request_record["body_json"], outbound_payload)
+
+    def test_collect_factors_real_http_invalid_json_response(self):
+        with RecordingNodeRedServer(
+            {
+                ("POST", "/api/auth/collect-factors"): {
+                    "status": 200,
+                    "headers": {"Content-Type": "text/plain"},
+                    "body_text": "not-json",
+                }
+            }
+        ) as server:
+            with self.settings(NODE_RED_BASE_URL=server.base_url, NODE_RED_TIMEOUT=2):
+                result = node_red_client.collect_factors({"session_id": 11})
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "invalid_json")
+
+    def test_collect_factors_real_http_timeout(self):
+        def slow_collect(_request_record):
+            time.sleep(0.25)
+            return {
+                "status": 200,
+                "body": {
+                    "ok": True,
+                    "rfid": {"ok": True, "uid": "CARD-1001"},
+                    "fingerprint": {"ok": True, "matched": True, "finger_id": 4},
+                },
+            }
+
+        with RecordingNodeRedServer(
+            {
+                ("POST", "/api/auth/collect-factors"): slow_collect,
+            }
+        ) as server:
+            with self.settings(NODE_RED_BASE_URL=server.base_url, NODE_RED_TIMEOUT=0.05):
+                result = node_red_client.collect_factors({"session_id": 22})
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "timeout")
+
+
+class NodeRedDjangoBoundaryTests(CoreTestDataMixin, TestCase):
+    def test_api_access_start_uses_real_http_call_to_fake_node_red(self):
+        with RecordingNodeRedServer(
+            {
+                ("POST", "/api/auth/collect-factors"): {
+                    "status": 200,
+                    "body": {
+                        "ok": True,
+                        "message": "",
+                        "rfid": {"ok": True, "sensor": "rfid", "uid": self.rfid.identifier, "message": ""},
+                        "fingerprint": {
+                            "ok": True,
+                            "sensor": "fingerprint",
+                            "matched": True,
+                            "finger_id": 4,
+                            "confidence": 87,
+                            "message": "",
+                        },
+                    },
+                }
+            }
+        ) as server:
+            with self.settings(NODE_RED_BASE_URL=server.base_url, NODE_RED_TIMEOUT=2):
+                response = self.client.post(
+                    reverse("core:api-access-start"),
+                    data=json.dumps(
+                        {
+                            "resource_id": self.resource.id,
+                            "tier": self.tier1_policy.tier,
+                            "user_id": self.user.id,
+                        }
+                    ),
+                    content_type="application/json",
+                )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["data"]["session"]["is_access_granted"])
+        self.assertEqual(len(server.requests), 1)
+        request_record = server.requests[0]
+        self.assertEqual(request_record["path"], "/api/auth/collect-factors")
+        self.assertEqual(
+            request_record["body_json"],
+            {
+                "session_id": payload["data"]["session"]["id"],
+                "resource_id": self.resource.id,
+                "user_id": self.user.id,
+                "policy_id": self.tier1_policy.id,
+                "required_factor_count": 2,
+            },
+        )
+
+    def test_api_access_start_real_http_timeout_denies_access_cleanly(self):
+        def slow_collect(_request_record):
+            time.sleep(0.25)
+            return {
+                "status": 200,
+                "body": {
+                    "ok": True,
+                    "rfid": {"ok": True, "uid": self.rfid.identifier},
+                    "fingerprint": {"ok": True, "matched": True, "finger_id": 4},
+                },
+            }
+
+        with RecordingNodeRedServer(
+            {
+                ("POST", "/api/auth/collect-factors"): slow_collect,
+            }
+        ) as server:
+            with self.settings(NODE_RED_BASE_URL=server.base_url, NODE_RED_TIMEOUT=0.05):
+                response = self.client.post(
+                    reverse("core:api-access-start"),
+                    data=json.dumps(
+                        {
+                            "resource_id": self.resource.id,
+                            "tier": self.tier1_policy.tier,
+                            "user_id": self.user.id,
+                        }
+                    ),
+                    content_type="application/json",
+                )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertFalse(payload["data"]["session"]["is_access_granted"])
+        self.assertEqual(
+            payload["data"]["session"]["factor_collection_result"]["error"],
+            "timeout",
+        )

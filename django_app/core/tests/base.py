@@ -9,17 +9,49 @@ class CoreTestDataMixin:
     def setUp(self):
         super().setUp()
         self.user = User.objects.create_user(username="alice", password="password123")
+
         self.resource = ProtectedResource.objects.create(
             name="Server Room",
             description="Restricted access room.",
+            allow_degraded_access=False,
         )
-        self.policy = AccessPolicy.objects.create(
+        self.degraded_resource = ProtectedResource.objects.create(
+            name="Operations Console",
+            description="Mission continuity console.",
+            allow_degraded_access=True,
+        )
+
+        self.tier1_policy = AccessPolicy.objects.create(
             resource=self.resource,
-            name="Default Policy",
-            description="Two-factor access for the room.",
+            name="Tier 1 Policy",
+            description="RFID plus fingerprint.",
+            tier=AccessPolicy.Tier.BASIC,
+            required_factor_count=2,
+        )
+        self.tier2_policy = AccessPolicy.objects.create(
+            resource=self.resource,
+            name="Tier 2 Policy",
+            description="RFID plus knowledge factor.",
             tier=AccessPolicy.Tier.ELEVATED,
             required_factor_count=2,
         )
+        self.tier3_policy = AccessPolicy.objects.create(
+            resource=self.resource,
+            name="Tier 3 Policy",
+            description="Degraded access request for a non-approved resource.",
+            tier=AccessPolicy.Tier.HIGH,
+            required_factor_count=2,
+        )
+        self.degraded_tier3_policy = AccessPolicy.objects.create(
+            resource=self.degraded_resource,
+            name="Tier 3 Degraded Policy",
+            description="Degraded access request for an approved resource.",
+            tier=AccessPolicy.Tier.HIGH,
+            required_factor_count=2,
+        )
+
+        self.policy = self.tier1_policy
+
         self.rfid = Credential.objects.create(
             user=self.user,
             credential_type=Credential.CredentialType.RFID,

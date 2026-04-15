@@ -12,15 +12,25 @@ from .models import (
 
 @admin.register(ProtectedResource)
 class ProtectedResourceAdmin(admin.ModelAdmin):
-    list_display = ("name", "active", "policy_count", "session_count", "created_at")
-    list_filter = ("active",)
-    list_editable = ("active",)
+    list_display = (
+        "name",
+        "active",
+        "allow_degraded_access",
+        "policy_count",
+        "session_count",
+        "created_at",
+    )
+    list_filter = ("active", "allow_degraded_access")
+    list_editable = ("active", "allow_degraded_access")
     ordering = ("name",)
     readonly_fields = ("created_at", "updated_at")
     search_help_text = "Search by resource name or description."
     search_fields = ("name", "description")
     fieldsets = (
-        ("Resource", {"fields": ("name", "description", "active")}),
+        (
+            "Resource",
+            {"fields": ("name", "description", "active", "allow_degraded_access")},
+        ),
         ("Timestamps", {"fields": ("created_at", "updated_at")}),
     )
 

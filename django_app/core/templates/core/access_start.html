@@ -6,10 +6,9 @@
 <section class="panel">
     <h1 style="margin-top: 0;">Start access attempt</h1>
     <p class="muted">
-        This demo starts with a subject and access tier only. Django resolves the
-        configured policy for that tier, calls the working Node-RED combined
-        factor endpoint, and then decides grant or deny from the enrolled
-        credentials.
+        Django receives the access request, collects Node-RED factors, verifies
+        the tier-required evidence, authorizes the requested resource, and
+        records the audit trail.
     </p>
 </section>
 
@@ -39,7 +38,7 @@
 <section class="panel">
     <h2 style="margin-top: 0;">Node-RED expectation</h2>
     <p class="muted">
-        Django is configured to call <code>{{ node_red_base_url }}/api/auth/collect-factors</code>.
+        Django is configured to call <code>{{ node_red_base_url }}/api/auth/collect-factors</code> for RFID and fingerprint only. Tier 2 and Tier 3 knowledge-factor checks stay inside Django.
     </p>
 </section>
 {% endblock content %}

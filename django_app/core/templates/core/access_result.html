@@ -19,6 +19,50 @@
 </section>
 
 <section class="panel">
+    <h2 style="margin-top: 0;">Authentication</h2>
+    <ul class="detail-list">
+        <li>
+            <span class="detail-label">Outcome</span>
+            {% if authentication_result.ok %}Succeeded{% else %}Failed{% endif %}
+        </li>
+        <li>
+            <span class="detail-label">Required factors</span>
+            {{ authentication_result.required_factor_types|join:", " }}
+        </li>
+        <li>
+            <span class="detail-label">Verified factors</span>
+            {{ authentication_result.verified_factor_types|join:", "|default:"None" }}
+        </li>
+        <li>
+            <span class="detail-label">Message</span>
+            {{ authentication_result.message|default:"No authentication details recorded." }}
+        </li>
+    </ul>
+</section>
+
+<section class="panel">
+    <h2 style="margin-top: 0;">Authorization</h2>
+    <ul class="detail-list">
+        <li>
+            <span class="detail-label">Outcome</span>
+            {% if authorization_result.ok %}Granted{% else %}Denied{% endif %}
+        </li>
+        <li>
+            <span class="detail-label">Degraded access required</span>
+            {% if authorization_result.degraded_access_required %}Yes{% else %}No{% endif %}
+        </li>
+        <li>
+            <span class="detail-label">Resource degraded approval</span>
+            {% if authorization_result.resource_allows_degraded_access %}Approved{% else %}Not approved{% endif %}
+        </li>
+        <li>
+            <span class="detail-label">Message</span>
+            {{ authorization_result.message|default:"No authorization details recorded." }}
+        </li>
+    </ul>
+</section>
+
+<section class="panel">
     <h2 style="margin-top: 0;">Factor collection</h2>
     <ul class="detail-list">
         <li>
@@ -54,6 +98,10 @@
         <li>
             <span class="detail-label">Tier</span>
             {{ session.policy.get_tier_display|default:session.details.selected_tier|default:"Unspecified" }}
+        </li>
+        <li>
+            <span class="detail-label">Resource</span>
+            {{ session.resource.name }}
         </li>
         <li>
             <span class="detail-label">Applied policy</span>

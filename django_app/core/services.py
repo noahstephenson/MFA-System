@@ -4,7 +4,15 @@ from django.db import transaction
 from django.utils import timezone
 
 from . import node_red_client
-from .models import AccessPolicy, AuditEvent, AuthenticationSession, Credential, ProtectedResource
+from .models import (
+    AccessPolicy,
+    AuditEvent,
+    AuthenticationSession,
+    Credential,
+    ProtectedResource,
+    normalize_access_tier,
+    tier_requirement_definition,
+)
 
 User = get_user_model()
 
@@ -40,11 +48,9 @@ def _merge_request_provenance(details, request_provenance):
         for key, value in (request_provenance or {}).items()
         if value not in (None, "", [])
     }
-    if not normalized:
-        return details or {}
-
     merged = dict(details or {})
-    merged["request_provenance"] = normalized
+    if normalized:
+        merged["request_provenance"] = normalized
     return merged
 
 
@@ -71,91 +77,65 @@ def _get_resource_or_error(resource_id):
 
 
 def _get_tier_or_error(tier):
-    normalized_tier = str(tier or "").strip().lower()
-    valid_tiers = {value for value, _label in AccessPolicy.Tier.choices}
+    normalized_tier = normalize_access_tier(tier)
     if not normalized_tier:
-        raise _validation_error("Select an access tier.", field="tier")
-    if normalized_tier not in valid_tiers:
-        raise _validation_error("The selected access tier is invalid.", field="tier")
+        raise _validation_error("Select a valid tier.", field="tier")
     return normalized_tier
 
 
-def _get_policy_for_resource(resource, policy_id=None):
-    active_policies = resource.policies.filter(active=True).order_by("id")
-
-    if policy_id is not None:
-        try:
-            return active_policies.get(id=policy_id)
-        except AccessPolicy.DoesNotExist as exc:
-            raise _validation_error(
-                "The selected access policy is not available for this resource.",
-                field="policy_id",
-            ) from exc
-
-    return active_policies.first()
+def _tier_label(tier):
+    normalized_tier = normalize_access_tier(tier)
+    return dict(AccessPolicy.Tier.choices).get(normalized_tier, normalized_tier or "Unknown")
 
 
-def _get_policy_for_tier(tier, *, policy_id=None):
+def _get_policy_for_resource_and_tier(resource, tier, *, policy_id=None):
     normalized_tier = _get_tier_or_error(tier)
-    active_policies = (
-        AccessPolicy.objects.select_related("resource")
-        .filter(
-            tier=normalized_tier,
-            active=True,
-            resource__active=True,
-        )
-        .order_by("id")
-    )
+    active_policies = resource.policies.filter(active=True, tier=normalized_tier).order_by("id")
 
     if policy_id is not None:
         try:
             return active_policies.get(id=policy_id)
         except AccessPolicy.DoesNotExist as exc:
             raise _validation_error(
-                "The selected access policy is not available for this tier.",
+                "The selected access policy is not available for this resource and tier.",
                 field="policy_id",
             ) from exc
 
     policy_count = active_policies.count()
     if policy_count == 0:
         raise _validation_error(
-            "No active demo policy is configured for the selected tier.",
+            "No active access policy is configured for the selected resource and tier.",
             field="tier",
         )
     if policy_count > 1:
         raise _validation_error(
-            "Multiple active demo policies exist for the selected tier. Keep exactly one active policy per tier for this demo.",
+            "Multiple active access policies exist for the selected resource and tier. Keep exactly one active policy for this demo path.",
             field="tier",
         )
     return active_policies.first()
 
 
-def _resolve_session_context(*, tier=None, resource_id=None, policy_id=None):
-    if tier is not None:
-        policy = _get_policy_for_tier(tier, policy_id=policy_id)
-        return policy.resource, policy, policy.tier
+def _selected_tier(session):
+    if session.policy is not None:
+        return normalize_access_tier(session.policy.tier)
+    return normalize_access_tier((session.details or {}).get("selected_tier"))
 
-    if resource_id in (None, ""):
-        raise _validation_error("A resource or tier is required to start a session.")
-    resource = _get_resource_or_error(resource_id)
-    policy = _get_policy_for_resource(resource, policy_id=policy_id)
-    selected_tier = policy.tier if policy else None
-    return resource, policy, selected_tier
+
+def _required_factor_types_for_session(session):
+    return tier_requirement_definition(_selected_tier(session))["required_factor_types"]
 
 
 def _get_session_details(session):
     details = dict(session.details or {})
+    details.setdefault("selected_tier", _selected_tier(session))
+    details.setdefault("required_factor_types", _required_factor_types_for_session(session))
     details.setdefault("accepted_factor_keys", [])
     details.setdefault("submitted_factors", [])
     details.setdefault("factor_collection_result", {})
+    details.setdefault("authentication_result", {})
+    details.setdefault("authorization_result", {})
     details.setdefault("result_message", "")
     return details
-
-
-def _save_session_details(session, details, *extra_fields):
-    session.details = details
-    update_fields = list(extra_fields) + ["details", "updated_at"]
-    session.save(update_fields=update_fields)
 
 
 def _factor_collection_result_summary(factor_result):
@@ -168,14 +148,14 @@ def _factor_collection_result_summary(factor_result):
 
     for sensor in ("rfid", "fingerprint"):
         sensor_result = factor_result.get(sensor) or {}
-        if isinstance(sensor_result, dict):
-            summary[sensor] = dict(sensor_result)
-        else:
-            summary[sensor] = {}
+        summary[sensor] = dict(sensor_result) if isinstance(sensor_result, dict) else {}
     return summary
 
 
 def _credential_match(user, credential_type, identifier):
+    if identifier in (None, ""):
+        return None
+
     return (
         Credential.objects.filter(
             user=user,
@@ -188,126 +168,281 @@ def _credential_match(user, credential_type, identifier):
     )
 
 
-def _factor_submission_payload(sensor_result, *, credential_type, identifier, matched, message):
+def _factor_submission_payload(
+    *,
+    credential_type,
+    identifier,
+    matched,
+    required,
+    source,
+    message,
+):
     return {
         "credential_type": credential_type,
         "identifier": str(identifier),
         "matched": matched,
+        "required": required,
+        "source": source,
         "reason_message": str(message or ""),
     }
 
 
-def _evaluate_factor_result(session, factor_result):
-    accepted_factor_keys = []
-    submitted_factors = []
-
+def _evaluate_rfid_factor(session, factor_result, *, required):
     rfid_result = factor_result.get("rfid") or {}
-    if rfid_result:
-        identifier = rfid_result.get("uid") or ""
-        credential = (
-            _credential_match(session.user, Credential.CredentialType.RFID, identifier)
-            if rfid_result.get("ok") and identifier
-            else None
-        )
-        matched = credential is not None
-        message = ""
-        if not matched:
-            if rfid_result.get("ok") and identifier:
-                message = "RFID credential is not enrolled for this user."
-            else:
-                message = rfid_result.get("message") or "RFID factor was not accepted."
-        submitted_factors.append(
-            _factor_submission_payload(
-                rfid_result,
-                credential_type=Credential.CredentialType.RFID,
-                identifier=identifier or "unknown",
-                matched=matched,
-                message=message,
-            )
-        )
-        if credential is not None:
-            accepted_factor_keys.append(f"credential:{credential.id}")
-
-    fingerprint_result = factor_result.get("fingerprint") or {}
-    if fingerprint_result:
-        identifier = fingerprint_result.get("finger_id")
-        credential = (
-            _credential_match(session.user, Credential.CredentialType.BIOMETRIC, identifier)
-            if fingerprint_result.get("ok") and identifier is not None
-            else None
-        )
-        matched = credential is not None
-        message = ""
-        if not matched:
-            if fingerprint_result.get("ok") and identifier is not None:
-                message = "Fingerprint credential is not enrolled for this user."
-            else:
-                message = fingerprint_result.get("message") or "Fingerprint factor was not accepted."
-        submitted_factors.append(
-            _factor_submission_payload(
-                fingerprint_result,
-                credential_type=Credential.CredentialType.BIOMETRIC,
-                identifier=identifier if identifier is not None else "unknown",
-                matched=matched,
-                message=message,
-            )
-        )
-        if credential is not None:
-            accepted_factor_keys.append(f"credential:{credential.id}")
-
-    return accepted_factor_keys, submitted_factors
-
-
-def _result_message(factor_result, *, granted, accepted_factor_count, required_factor_count):
-    if not factor_result.get("ok"):
-        return factor_result.get("message") or "Node-RED factor collection failed."
-
-    if granted:
-        return "Authentication requirements satisfied. Access granted."
-
-    for sensor_name in ("rfid", "fingerprint"):
-        sensor_result = factor_result.get(sensor_name) or {}
-        if sensor_result and not sensor_result.get("ok") and sensor_result.get("message"):
-            return sensor_result["message"]
-
-    if accepted_factor_count == 0:
-        return "Presented factors did not match enrolled credentials."
-
-    return (
-        "Authentication requirements were not satisfied. "
-        f"{accepted_factor_count} of {required_factor_count} required factors were accepted."
+    identifier = rfid_result.get("uid") or ""
+    credential = (
+        _credential_match(session.user, Credential.CredentialType.RFID, identifier)
+        if rfid_result.get("ok") and identifier
+        else None
     )
+    matched = credential is not None
+
+    if matched:
+        message = ""
+    elif rfid_result.get("ok") and identifier:
+        message = "RFID credential is not enrolled for this user."
+    elif rfid_result:
+        message = rfid_result.get("message") or "RFID factor was not accepted."
+    else:
+        message = "RFID factor was not returned by Node-RED."
+
+    return {
+        "factor_type": Credential.CredentialType.RFID,
+        "required": required,
+        "verified": matched,
+        "credential": credential,
+        "payload": _factor_submission_payload(
+            credential_type=Credential.CredentialType.RFID,
+            identifier=identifier or "unknown",
+            matched=matched,
+            required=required,
+            source="node_red",
+            message=message,
+        ),
+    }
 
 
-def _finalize_session(session, factor_result, *, request_provenance=None):
+def _evaluate_fingerprint_factor(session, factor_result, *, required):
+    fingerprint_result = factor_result.get("fingerprint") or {}
+    identifier = fingerprint_result.get("finger_id")
+    credential = (
+        _credential_match(session.user, Credential.CredentialType.BIOMETRIC, identifier)
+        if fingerprint_result.get("ok") and identifier is not None
+        else None
+    )
+    matched = credential is not None
+
+    if matched:
+        message = ""
+    elif fingerprint_result.get("ok") and identifier is not None:
+        message = "Fingerprint credential is not enrolled for this user."
+    elif fingerprint_result:
+        message = fingerprint_result.get("message") or "Fingerprint factor was not accepted."
+    else:
+        message = "Fingerprint factor was not returned by Node-RED."
+
+    return {
+        "factor_type": Credential.CredentialType.BIOMETRIC,
+        "required": required,
+        "verified": matched,
+        "credential": credential,
+        "payload": _factor_submission_payload(
+            credential_type=Credential.CredentialType.BIOMETRIC,
+            identifier=identifier if identifier is not None else "unknown",
+            matched=matched,
+            required=required,
+            source="node_red",
+            message=message,
+        ),
+    }
+
+
+def _evaluate_knowledge_factor(session, knowledge_factor, *, required):
+    submitted_value = str(knowledge_factor or "").strip()
+    credential = (
+        _credential_match(session.user, Credential.CredentialType.PIN, submitted_value)
+        if submitted_value
+        else None
+    )
+    matched = credential is not None
+
+    if matched:
+        message = ""
+    elif required and not submitted_value:
+        message = "Knowledge factor is required for this tier."
+    elif submitted_value:
+        message = "Knowledge factor did not match the enrolled credential."
+    else:
+        message = ""
+
+    return {
+        "factor_type": Credential.CredentialType.PIN,
+        "required": required,
+        "verified": matched,
+        "credential": credential,
+        "payload": _factor_submission_payload(
+            credential_type=Credential.CredentialType.PIN,
+            identifier="provided" if submitted_value else "missing",
+            matched=matched,
+            required=required,
+            source="django",
+            message=message,
+        ),
+        "was_submitted": bool(submitted_value),
+    }
+
+
+def _evaluate_authentication(session, factor_result, *, knowledge_factor=""):
+    required_factor_types = _required_factor_types_for_session(session)
+    required_factor_set = set(required_factor_types)
+    evaluations = {}
+    submitted_factors = []
+    accepted_factor_keys = []
+    verified_factor_types = []
+
+    rfid_evaluation = _evaluate_rfid_factor(
+        session,
+        factor_result,
+        required=Credential.CredentialType.RFID in required_factor_set,
+    )
+    evaluations[Credential.CredentialType.RFID] = rfid_evaluation
+    submitted_factors.append(rfid_evaluation["payload"])
+
+    fingerprint_evaluation = _evaluate_fingerprint_factor(
+        session,
+        factor_result,
+        required=Credential.CredentialType.BIOMETRIC in required_factor_set,
+    )
+    evaluations[Credential.CredentialType.BIOMETRIC] = fingerprint_evaluation
+    if fingerprint_evaluation["required"] or factor_result.get("fingerprint"):
+        submitted_factors.append(fingerprint_evaluation["payload"])
+
+    knowledge_evaluation = _evaluate_knowledge_factor(
+        session,
+        knowledge_factor,
+        required=Credential.CredentialType.PIN in required_factor_set,
+    )
+    evaluations[Credential.CredentialType.PIN] = knowledge_evaluation
+    if knowledge_evaluation["required"] or knowledge_evaluation["was_submitted"]:
+        submitted_factors.append(knowledge_evaluation["payload"])
+
+    for factor_type in required_factor_types:
+        evaluation = evaluations[factor_type]
+        if evaluation["verified"]:
+            verified_factor_types.append(factor_type)
+            accepted_factor_keys.append(f"credential:{evaluation['credential'].id}")
+
+    authentication_ok = len(verified_factor_types) == len(required_factor_types)
+    if authentication_ok:
+        authentication_message = "Authentication evidence satisfied the selected tier requirements."
+    else:
+        authentication_message = "Authentication failed."
+        for factor_type in required_factor_types:
+            evaluation = evaluations[factor_type]
+            if not evaluation["verified"]:
+                authentication_message = evaluation["payload"]["reason_message"] or authentication_message
+                break
+
+    return {
+        "ok": authentication_ok,
+        "tier": _selected_tier(session),
+        "required_factor_types": required_factor_types,
+        "verified_factor_types": verified_factor_types,
+        "message": authentication_message,
+        "submitted_factors": submitted_factors,
+        "accepted_factor_keys": accepted_factor_keys,
+    }
+
+
+def _evaluate_authorization(session, authentication_result):
+    tier_requirements = tier_requirement_definition(_selected_tier(session))
+    requires_degraded_access = tier_requirements["requires_degraded_access"]
+
+    if not authentication_result["ok"]:
+        return {
+            "ok": False,
+            "degraded_access_required": requires_degraded_access,
+            "resource_allows_degraded_access": session.resource.allow_degraded_access,
+            "message": "Authorization denied because authentication failed.",
+        }
+
+    if requires_degraded_access and not session.resource.allow_degraded_access:
+        return {
+            "ok": False,
+            "degraded_access_required": True,
+            "resource_allows_degraded_access": False,
+            "message": "Selected resource is not approved for Tier 3 degraded access.",
+        }
+
+    if requires_degraded_access:
+        message = "Tier 3 degraded access is approved for the selected resource."
+    else:
+        message = "Authorization granted for the selected resource."
+
+    return {
+        "ok": True,
+        "degraded_access_required": requires_degraded_access,
+        "resource_allows_degraded_access": session.resource.allow_degraded_access,
+        "message": message,
+    }
+
+
+def _node_red_collection_event(factor_result):
+    response_available = factor_result.get("status_code") is not None or factor_result.get("raw") is not None
+    if response_available and factor_result.get("ok"):
+        return "factor_collection_completed", AuditEvent.Severity.INFO, "Node-RED returned factor collection results."
+    if response_available:
+        return (
+            "factor_collection_completed",
+            AuditEvent.Severity.WARNING,
+            "Node-RED returned factor collection results with errors.",
+        )
+    return "factor_collection_failed", AuditEvent.Severity.ERROR, "Node-RED factor collection failed."
+
+
+def _final_result_message(authentication_result, authorization_result):
+    if not authentication_result["ok"]:
+        return authentication_result["message"]
+    if not authorization_result["ok"]:
+        return authorization_result["message"]
+    return "Authentication succeeded and access was authorized."
+
+
+def _finalize_session(session, factor_result, *, knowledge_factor="", request_provenance=None):
     details = _get_session_details(session)
     details["factor_collection_result"] = _factor_collection_result_summary(factor_result)
 
-    accepted_factor_keys, submitted_factors = _evaluate_factor_result(session, factor_result)
-    details["accepted_factor_keys"] = accepted_factor_keys
-    details["submitted_factors"] = submitted_factors
-
-    accepted_factor_count = len(accepted_factor_keys)
-    required_factor_count = session.required_factor_count
-    granted = accepted_factor_count >= required_factor_count
-    result_message = _result_message(
+    authentication_result = _evaluate_authentication(
+        session,
         factor_result,
-        granted=granted,
-        accepted_factor_count=accepted_factor_count,
-        required_factor_count=required_factor_count,
+        knowledge_factor=knowledge_factor,
     )
-    details["result_message"] = result_message
+    authorization_result = _evaluate_authorization(session, authentication_result)
 
-    session.current_step = accepted_factor_count
+    details["required_factor_types"] = authentication_result["required_factor_types"]
+    details["accepted_factor_keys"] = authentication_result["accepted_factor_keys"]
+    details["submitted_factors"] = authentication_result["submitted_factors"]
+    details["authentication_result"] = {
+        "ok": authentication_result["ok"],
+        "tier": authentication_result["tier"],
+        "required_factor_types": authentication_result["required_factor_types"],
+        "verified_factor_types": authentication_result["verified_factor_types"],
+        "message": authentication_result["message"],
+    }
+    details["authorization_result"] = authorization_result
+    details["result_message"] = _final_result_message(authentication_result, authorization_result)
+
+    session.current_step = len(authentication_result["verified_factor_types"])
     session.completed_at = timezone.now()
+    access_granted = authentication_result["ok"] and authorization_result["ok"]
     session.status = (
         AuthenticationSession.Status.APPROVED
-        if granted
+        if access_granted
         else AuthenticationSession.Status.DENIED
     )
     session.decision = (
         AuthenticationSession.Decision.GRANTED
-        if granted
+        if access_granted
         else AuthenticationSession.Decision.REJECTED
     )
     session.details = details
@@ -322,16 +457,13 @@ def _finalize_session(session, factor_result, *, request_provenance=None):
         ]
     )
 
+    factor_event_type, factor_event_severity, factor_event_message = _node_red_collection_event(factor_result)
     create_audit_event(
-        "factor_collection_completed" if factor_result.get("ok") else "factor_collection_failed",
-        (
-            "Node-RED returned factor collection results."
-            if factor_result.get("ok")
-            else "Node-RED factor collection failed."
-        ),
+        factor_event_type,
+        factor_event_message,
         session=session,
         user=session.user,
-        severity=AuditEvent.Severity.INFO if factor_result.get("ok") else AuditEvent.Severity.WARNING,
+        severity=factor_event_severity,
         details=_merge_request_provenance(
             {
                 "node_red_error": factor_result.get("error", ""),
@@ -342,41 +474,74 @@ def _finalize_session(session, factor_result, *, request_provenance=None):
     )
 
     create_audit_event(
-        "access_granted" if granted else "access_denied",
-        result_message,
+        "authentication_succeeded" if authentication_result["ok"] else "authentication_failed",
+        authentication_result["message"],
         session=session,
         user=session.user,
-        severity=AuditEvent.Severity.INFO if granted else AuditEvent.Severity.WARNING,
+        severity=AuditEvent.Severity.INFO if authentication_result["ok"] else AuditEvent.Severity.WARNING,
         details=_merge_request_provenance(
             {
-                "accepted_factor_count": accepted_factor_count,
-                "required_factor_count": required_factor_count,
+                "required_factor_types": authentication_result["required_factor_types"],
+                "verified_factor_types": authentication_result["verified_factor_types"],
             },
             request_provenance,
         ),
     )
 
-    return session, result_message
+    create_audit_event(
+        "authorization_granted" if authorization_result["ok"] else "authorization_denied",
+        authorization_result["message"],
+        session=session,
+        user=session.user,
+        severity=AuditEvent.Severity.INFO if authorization_result["ok"] else AuditEvent.Severity.WARNING,
+        details=_merge_request_provenance(
+            {
+                "degraded_access_required": authorization_result["degraded_access_required"],
+                "resource_allows_degraded_access": authorization_result["resource_allows_degraded_access"],
+            },
+            request_provenance,
+        ),
+    )
+
+    create_audit_event(
+        "access_granted" if access_granted else "access_denied",
+        details["result_message"],
+        session=session,
+        user=session.user,
+        severity=AuditEvent.Severity.INFO if access_granted else AuditEvent.Severity.WARNING,
+        details=_merge_request_provenance(
+            {
+                "selected_tier": details["selected_tier"],
+                "resource_id": session.resource_id,
+                "policy_id": session.policy_id,
+            },
+            request_provenance,
+        ),
+    )
+
+    return session, details["result_message"]
 
 
 @transaction.atomic
 def start_authentication_session(
     *,
+    resource_id,
     user_id,
-    tier=None,
-    resource_id=None,
+    tier,
+    knowledge_factor="",
     policy_id=None,
     request_provenance=None,
 ):
+    del knowledge_factor
+
     user = _get_user_or_error(user_id)
-    resource, policy, selected_tier = _resolve_session_context(
-        tier=tier,
-        resource_id=resource_id,
-        policy_id=policy_id,
-    )
+    resource = _get_resource_or_error(resource_id)
+    selected_tier = _get_tier_or_error(tier)
+    policy = _get_policy_for_resource_and_tier(resource, selected_tier, policy_id=policy_id)
+
     session_details = _get_session_details(AuthenticationSession(details={}))
-    if selected_tier:
-        session_details["selected_tier"] = selected_tier
+    session_details["selected_tier"] = selected_tier
+    session_details["required_factor_types"] = list(policy.required_factor_types)
 
     session = AuthenticationSession.objects.create(
         user=user,
@@ -390,14 +555,15 @@ def start_authentication_session(
 
     create_audit_event(
         "session_started",
-        "Authentication session started.",
+        "Access request received. Authentication session started.",
         session=session,
         user=user,
         details=_merge_request_provenance(
             {
-                "tier": selected_tier,
+                "selected_tier": selected_tier,
                 "resource_id": resource.id,
-                "policy_id": policy.id if policy else None,
+                "policy_id": policy.id,
+                "resource_allows_degraded_access": resource.allow_degraded_access,
             },
             request_provenance,
         ),
@@ -414,16 +580,18 @@ def get_authentication_session(session_id):
 
 def run_node_red_access_attempt(
     *,
+    resource_id,
     user_id,
-    tier=None,
-    resource_id=None,
+    tier,
+    knowledge_factor="",
     policy_id=None,
     request_provenance=None,
 ):
     session = start_authentication_session(
+        resource_id=resource_id,
         user_id=user_id,
         tier=tier,
-        resource_id=resource_id,
+        knowledge_factor=knowledge_factor,
         policy_id=policy_id,
         request_provenance=request_provenance,
     )
@@ -441,6 +609,7 @@ def run_node_red_access_attempt(
     session, result_message = _finalize_session(
         session,
         factor_result,
+        knowledge_factor=knowledge_factor,
         request_provenance=request_provenance,
     )
     return {

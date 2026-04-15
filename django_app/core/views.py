@@ -51,8 +51,10 @@ def access_start(request):
     if request.method == "POST" and form.is_valid():
         try:
             result = run_node_red_access_attempt(
+                resource_id=form.cleaned_data["resource"].id,
                 user_id=form.cleaned_data["user"].id,
                 tier=form.cleaned_data["tier"],
+                knowledge_factor=form.cleaned_data.get("knowledge_factor", ""),
                 request_provenance=_request_provenance(request),
             )
         except ValidationError as exc:
@@ -76,6 +78,8 @@ def access_result(request, session_id):
     session = _get_session_or_404(session_id)
     audit_events = list(session.audit_events.select_related("user").order_by("-timestamp")[:8])
     factor_collection_result = (session.details or {}).get("factor_collection_result") or {}
+    authentication_result = (session.details or {}).get("authentication_result") or {}
+    authorization_result = (session.details or {}).get("authorization_result") or {}
     result_message = (session.details or {}).get("result_message") or "Access attempt completed."
     return render(
         request,
@@ -84,6 +88,8 @@ def access_result(request, session_id):
             "session": session,
             "audit_events": audit_events,
             "factor_collection_result": factor_collection_result,
+            "authentication_result": authentication_result,
+            "authorization_result": authorization_result,
             "result_message": result_message,
         },
     )
