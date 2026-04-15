@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.db import connection
 from django.test import TestCase
 from django.utils import timezone
 
@@ -14,6 +15,31 @@ from .base import CoreTestDataMixin
 
 
 class CoreModelTests(CoreTestDataMixin, TestCase):
+    def test_authentication_session_table_matches_current_model_schema(self):
+        with connection.cursor() as cursor:
+            description = connection.introspection.get_table_description(
+                cursor,
+                AuthenticationSession._meta.db_table,
+            )
+
+        column_names = {column.name for column in description}
+        self.assertEqual(
+            column_names,
+            {
+                "id",
+                "status",
+                "decision",
+                "current_step",
+                "started_at",
+                "completed_at",
+                "details",
+                "updated_at",
+                "policy_id",
+                "user_id",
+                "resource_id",
+            },
+        )
+
     def test_model_string_representations_are_readable(self):
         session = AuthenticationSession.objects.create(
             user=self.user,
