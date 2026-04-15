@@ -5,7 +5,7 @@ from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
 
-from .forms import AccessStartForm, CapturedCredentialForm, PinEnrollmentForm, UserSelectionForm
+from .forms import AccessStartForm, CapturedCredentialForm, EnrollmentChooserForm, PinEnrollmentForm
 from .models import AccessPolicy, Credential, normalize_access_tier, tier_requirement_definition
 from .services import (
     capture_enrollment_identifier,
@@ -132,6 +132,16 @@ def _selected_user_from_request(request):
 
 def _initial_user_value(selected_user):
     return {"user": selected_user.id} if selected_user is not None else {}
+
+
+def _selected_credential_type(request):
+    raw_type = str(request.POST.get("credential_type") or request.GET.get("credential_type") or "").strip()
+    valid_types = {
+        Credential.CredentialType.RFID,
+        Credential.CredentialType.BIOMETRIC,
+        Credential.CredentialType.PIN,
+    }
+    return raw_type if raw_type in valid_types else Credential.CredentialType.RFID
 
 
 def _capture_preview(credential_type, *, ok=None, identifier="", message=""):
@@ -405,10 +415,20 @@ def access_result(request, session_id):
 
 def enroll(request):
     selected_user = _selected_user_from_request(request)
+    selected_credential_type = _selected_credential_type(request)
     badge_capture = None
     fingerprint_capture = None
+    chooser_initial = {
+        **_initial_user_value(selected_user),
+        "credential_type": selected_credential_type,
+    }
 
-    user_select_form = UserSelectionForm(initial=_initial_user_value(selected_user))
+    chooser_form = EnrollmentChooserForm(initial=chooser_initial)
+    if request.method == "POST":
+        chooser_form = EnrollmentChooserForm(request.POST)
+        chooser_form.fields["user"].required = False
+        chooser_form.fields["credential_type"].required = False
+
     badge_save_form = CapturedCredentialForm(initial=_initial_user_value(selected_user))
     fingerprint_save_form = CapturedCredentialForm(initial=_initial_user_value(selected_user))
     pin_form = PinEnrollmentForm(initial=_initial_user_value(selected_user))
@@ -417,6 +437,27 @@ def enroll(request):
         action = str(request.POST.get("action") or "").strip()
         if action and selected_user is None:
             messages.warning(request, "Choose a person first.")
+        elif action == "save-pin":
+            pin_form = PinEnrollmentForm(request.POST)
+            if pin_form.is_valid():
+                try:
+                    result = enroll_credential(
+                        user_id=pin_form.cleaned_data["user"].id,
+                        credential_type=Credential.CredentialType.PIN,
+                        identifier=pin_form.cleaned_data["pin"],
+                        label=pin_form.cleaned_data.get("label", ""),
+                        request_provenance=_request_provenance(request, channel="html"),
+                    )
+                except ValidationError as exc:
+                    _add_form_errors(pin_form, exc)
+                else:
+                    messages.success(
+                        request,
+                        _credential_saved_message(result["credential"], created=result["created"]),
+                    )
+                    return redirect(
+                        f"{reverse('core:enroll')}?user={result['credential'].user_id}&credential_type={Credential.CredentialType.PIN}"
+                    )
         elif action == "capture-rfid":
             try:
                 capture_result = capture_enrollment_identifier(
@@ -462,7 +503,9 @@ def enroll(request):
                         request,
                         _credential_saved_message(result["credential"], created=result["created"]),
                     )
-                    return redirect(f"{reverse('core:enroll')}?user={result['credential'].user_id}")
+                    return redirect(
+                        f"{reverse('core:enroll')}?user={result['credential'].user_id}&credential_type={Credential.CredentialType.RFID}"
+                    )
             else:
                 if not str(request.POST.get("captured_identifier") or "").strip():
                     messages.warning(request, "Scan the badge before saving.")
@@ -515,7 +558,9 @@ def enroll(request):
                         request,
                         _credential_saved_message(result["credential"], created=result["created"]),
                     )
-                    return redirect(f"{reverse('core:enroll')}?user={result['credential'].user_id}")
+                    return redirect(
+                        f"{reverse('core:enroll')}?user={result['credential'].user_id}&credential_type={Credential.CredentialType.BIOMETRIC}"
+                    )
             else:
                 if not str(request.POST.get("captured_identifier") or "").strip():
                     messages.warning(request, "Capture the fingerprint before saving.")
@@ -523,25 +568,6 @@ def enroll(request):
                 Credential.CredentialType.BIOMETRIC,
                 identifier=request.POST.get("captured_identifier", ""),
             )
-        elif action == "save-pin":
-            pin_form = PinEnrollmentForm(request.POST)
-            if pin_form.is_valid():
-                try:
-                    result = enroll_credential(
-                        user_id=pin_form.cleaned_data["user"].id,
-                        credential_type=Credential.CredentialType.PIN,
-                        identifier=pin_form.cleaned_data["pin"],
-                        label=pin_form.cleaned_data.get("label", ""),
-                        request_provenance=_request_provenance(request, channel="html"),
-                    )
-                except ValidationError as exc:
-                    _add_form_errors(pin_form, exc)
-                else:
-                    messages.success(
-                        request,
-                        _credential_saved_message(result["credential"], created=result["created"]),
-                    )
-                    return redirect(f"{reverse('core:enroll')}?user={result['credential'].user_id}")
 
     selected_credentials = (
         Credential.objects.filter(user=selected_user).order_by("credential_type", "label", "identifier")
@@ -555,12 +581,13 @@ def enroll(request):
         {
             "badge_capture": badge_capture,
             "badge_save_form": badge_save_form,
+            "chooser_form": chooser_form,
             "fingerprint_capture": fingerprint_capture,
             "fingerprint_save_form": fingerprint_save_form,
             "nav_key": "enroll",
             "pin_form": pin_form,
+            "selected_credential_type": selected_credential_type,
             "selected_user": selected_user,
             "selected_credentials": selected_credentials,
-            "user_select_form": user_select_form,
         },
     )

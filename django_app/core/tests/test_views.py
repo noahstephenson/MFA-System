@@ -67,16 +67,18 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertLess(content.index("Enroll Credentials"), content.index("Start Access Request"))
 
     def test_enrollment_page_renders_operator_actions_without_manual_hardware_fields(self):
-        response = self.client.get(f"{reverse('core:enroll')}?user={self.user.id}")
+        response = self.client.get(
+            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.RFID}"
+        )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Enroll credentials")
+        self.assertContains(response, "Enroll credential")
+        self.assertContains(response, "Credential")
         self.assertContains(response, "Scan Badge")
-        self.assertContains(response, "Capture Fingerprint")
-        self.assertContains(response, "Save PIN")
-        self.assertContains(response, 'name="pin"', html=False)
+        self.assertNotContains(response, "Capture Fingerprint")
+        self.assertNotContains(response, "Save PIN")
+        self.assertNotContains(response, 'name="pin"', html=False)
         self.assertNotContains(response, "Identifier / value")
-        self.assertNotContains(response, "Credential type")
         self.assertNotContains(response, 'name="identifier"', html=False)
 
     @patch("core.views.capture_enrollment_identifier")
@@ -93,6 +95,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             {
                 "action": "capture-rfid",
                 "user": self.user.id,
+                "credential_type": Credential.CredentialType.RFID,
             },
         )
 
@@ -106,18 +109,20 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             {
                 "action": "save-rfid",
                 "user": self.user.id,
+                "credential_type": Credential.CredentialType.RFID,
                 "captured_identifier": "CARD-2002",
-                "label": "Spare badge",
             },
         )
 
-        self.assertRedirects(save_response, f"{reverse('core:enroll')}?user={self.user.id}")
+        self.assertRedirects(
+            save_response,
+            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.RFID}",
+        )
         self.assertTrue(
             Credential.objects.filter(
                 user=self.user,
                 credential_type=Credential.CredentialType.RFID,
                 identifier="CARD-2002",
-                label="Spare badge",
                 active=True,
             ).exists()
         )
@@ -136,6 +141,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             {
                 "action": "capture-fingerprint",
                 "user": self.user.id,
+                "credential_type": Credential.CredentialType.BIOMETRIC,
             },
         )
 
@@ -149,18 +155,20 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             {
                 "action": "save-fingerprint",
                 "user": self.user.id,
+                "credential_type": Credential.CredentialType.BIOMETRIC,
                 "captured_identifier": "7",
-                "label": "Backup print",
             },
         )
 
-        self.assertRedirects(save_response, f"{reverse('core:enroll')}?user={self.user.id}")
+        self.assertRedirects(
+            save_response,
+            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.BIOMETRIC}",
+        )
         self.assertTrue(
             Credential.objects.filter(
                 user=self.user,
                 credential_type=Credential.CredentialType.BIOMETRIC,
                 identifier="7",
-                label="Backup print",
                 active=True,
             ).exists()
         )
@@ -171,12 +179,16 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             {
                 "action": "save-pin",
                 "user": self.user.id,
+                "credential_type": Credential.CredentialType.PIN,
                 "pin": "1357",
                 "label": "Shift PIN",
             },
         )
 
-        self.assertRedirects(response, f"{reverse('core:enroll')}?user={self.user.id}")
+        self.assertRedirects(
+            response,
+            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.PIN}",
+        )
         self.assertTrue(
             Credential.objects.filter(
                 user=self.user,
@@ -186,6 +198,44 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
                 active=True,
             ).exists()
         )
+
+    def test_enrollment_page_changes_by_credential_type(self):
+        rfid_response = self.client.get(
+            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.RFID}"
+        )
+        pin_response = self.client.get(
+            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.PIN}"
+        )
+
+        self.assertContains(rfid_response, "Scan badge")
+        self.assertNotContains(rfid_response, "Enter PIN")
+        self.assertNotContains(rfid_response, 'name="pin"', html=False)
+        self.assertContains(pin_response, "Enter PIN")
+        self.assertContains(pin_response, 'name="pin"', html=False)
+        self.assertNotContains(pin_response, "Scan Badge")
+
+    @patch("core.views.capture_enrollment_identifier")
+    def test_enrollment_capture_failure_is_shown_cleanly(self, mock_capture):
+        mock_capture.return_value = {
+            "ok": False,
+            "identifier": "",
+            "message": "Node-RED request timed out.",
+            "capture_result": {"error": "timeout"},
+        }
+
+        response = self.client.post(
+            reverse("core:enroll"),
+            {
+                "action": "capture-rfid",
+                "user": self.user.id,
+                "credential_type": Credential.CredentialType.RFID,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Capture failed")
+        self.assertContains(response, "Factor service timed out.")
+        self.assertNotContains(response, "Save Badge")
 
     def test_access_start_page_loads_with_operator_sections_and_factor_cards(self):
         response = self.client.get(reverse("core:access-start"))

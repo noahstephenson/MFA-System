@@ -6,22 +6,31 @@
 <section class="panel page-header">
     <div>
         <div class="eyebrow">Enroll</div>
-        <h1>Enroll credentials</h1>
-        <p class="lead">Select a person, then scan a badge, capture a fingerprint, or save a PIN.</p>
+        <h1>Enroll credential</h1>
+        <p class="lead">Select a person, choose a credential, then capture or enter it.</p>
     </div>
     <div class="actions">
         <a class="button secondary" href="{% url 'core:access-start' %}">Go to Access</a>
     </div>
 </section>
 
-<section class="panel compact">
-    <form method="get" class="inline-form">
-        <div class="form-field">
-            <label for="{{ user_select_form.user.id_for_label }}">{{ user_select_form.user.label }}</label>
-            {{ user_select_form.user }}
-            {{ user_select_form.user.errors }}
+<section class="panel">
+    <form method="get" class="form-grid">
+        <div class="action-grid">
+            <div class="form-field">
+                <label for="{{ chooser_form.user.id_for_label }}">{{ chooser_form.user.label }}</label>
+                {{ chooser_form.user }}
+                {{ chooser_form.user.errors }}
+            </div>
+            <div class="form-field">
+                <label for="{{ chooser_form.credential_type.id_for_label }}">{{ chooser_form.credential_type.label }}</label>
+                {{ chooser_form.credential_type }}
+                {{ chooser_form.credential_type.errors }}
+            </div>
         </div>
-        <button type="submit">Load</button>
+        <div class="actions">
+            <button type="submit">Load</button>
+        </div>
     </form>
 </section>
 
@@ -30,122 +39,91 @@
         <div class="eyebrow">Current person</div>
         <h2 style="margin-bottom: 0;">{{ selected_user.username }}</h2>
     </section>
-{% endif %}
-
-<div class="action-grid">
-    <section class="panel">
-        <div class="eyebrow">Badge</div>
-        <h2>Scan badge</h2>
-        <p class="muted">Read from the station.</p>
-        <form method="post" class="actions">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="capture-rfid">
-            <input type="hidden" name="user" value="{{ selected_user.id|default:'' }}">
-            <button type="submit" {% if not selected_user %}disabled{% endif %}>Scan Badge</button>
-        </form>
-    </section>
 
     <section class="panel">
-        <div class="eyebrow">Fingerprint</div>
-        <h2>Capture fingerprint</h2>
-        <p class="muted">Read from the sensor.</p>
-        <form method="post" class="actions">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="capture-fingerprint">
-            <input type="hidden" name="user" value="{{ selected_user.id|default:'' }}">
-            <button type="submit" {% if not selected_user %}disabled{% endif %}>Capture Fingerprint</button>
-        </form>
-    </section>
+        {% if selected_credential_type == "rfid" %}
+            <div class="eyebrow">Badge</div>
+            <h2>Scan badge</h2>
+            <p class="muted">Scan, review, save.</p>
 
-    <section class="panel">
-        <div class="eyebrow">PIN</div>
-        <h2>Set PIN</h2>
-        <p class="muted">Enter this one manually.</p>
-        <form method="post" class="form-grid">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="save-pin">
-            {{ pin_form.user }}
-            {{ pin_form.non_field_errors }}
-            <div class="form-field">
-                <label for="{{ pin_form.pin.id_for_label }}">{{ pin_form.pin.label }}</label>
-                {% if selected_user %}
+            <form method="post" class="actions" style="margin-bottom: 1rem;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="capture-rfid">
+                <input type="hidden" name="user" value="{{ selected_user.id }}">
+                <input type="hidden" name="credential_type" value="rfid">
+                <button type="submit">Scan Badge</button>
+            </form>
+
+            {% if badge_capture %}
+                <div class="readout {{ badge_capture.state }}">
+                    <strong>{{ badge_capture.status }}</strong>
+                    <div>{{ badge_capture.detail }}</div>
+                </div>
+            {% endif %}
+
+            {% if badge_capture and badge_capture.state == "success" %}
+                <form method="post" class="actions" style="margin-top: 1rem;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save-rfid">
+                    <input type="hidden" name="credential_type" value="rfid">
+                    {{ badge_save_form.user }}
+                    {{ badge_save_form.captured_identifier }}
+                    <button type="submit">Save Badge</button>
+                </form>
+            {% endif %}
+
+        {% elif selected_credential_type == "biometric" %}
+            <div class="eyebrow">Fingerprint</div>
+            <h2>Capture fingerprint</h2>
+            <p class="muted">Capture, review, save.</p>
+
+            <form method="post" class="actions" style="margin-bottom: 1rem;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="capture-fingerprint">
+                <input type="hidden" name="user" value="{{ selected_user.id }}">
+                <input type="hidden" name="credential_type" value="biometric">
+                <button type="submit">Capture Fingerprint</button>
+            </form>
+
+            {% if fingerprint_capture %}
+                <div class="readout {{ fingerprint_capture.state }}">
+                    <strong>{{ fingerprint_capture.status }}</strong>
+                    <div>{{ fingerprint_capture.detail }}</div>
+                </div>
+            {% endif %}
+
+            {% if fingerprint_capture and fingerprint_capture.state == "success" %}
+                <form method="post" class="actions" style="margin-top: 1rem;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save-fingerprint">
+                    <input type="hidden" name="credential_type" value="biometric">
+                    {{ fingerprint_save_form.user }}
+                    {{ fingerprint_save_form.captured_identifier }}
+                    <button type="submit">Save Fingerprint</button>
+                </form>
+            {% endif %}
+
+        {% else %}
+            <div class="eyebrow">PIN</div>
+            <h2>Enter PIN</h2>
+            <p class="muted">Type the PIN, then save.</p>
+
+            <form method="post" class="form-grid">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="save-pin">
+                <input type="hidden" name="credential_type" value="pin">
+                {{ pin_form.user }}
+                {{ pin_form.non_field_errors }}
+                <div class="form-field">
+                    <label for="{{ pin_form.pin.id_for_label }}">{{ pin_form.pin.label }}</label>
                     {{ pin_form.pin }}
-                {% else %}
-                    <input type="password" disabled placeholder="Select a person first">
-                {% endif %}
-                {{ pin_form.pin.errors }}
-            </div>
-            <div class="form-field">
-                <label for="{{ pin_form.label.id_for_label }}">{{ pin_form.label.label }}</label>
-                {% if selected_user %}
-                    {{ pin_form.label }}
-                {% else %}
-                    <input type="text" disabled placeholder="Optional label">
-                {% endif %}
-                {{ pin_form.label.errors }}
-            </div>
-            <div class="actions">
-                <button type="submit" {% if not selected_user %}disabled{% endif %}>Save PIN</button>
-            </div>
-        </form>
-    </section>
-</div>
-
-{% if badge_capture or fingerprint_capture %}
-    <section class="panel">
-        <div class="action-grid">
-            <div>
-                {% if badge_capture %}
-                    <div class="readout {{ badge_capture.state }}">
-                        <strong>{{ badge_capture.status }}</strong>
-                        <div>{{ badge_capture.detail }}</div>
-                    </div>
-                {% endif %}
-                {% if badge_capture and badge_capture.state == "success" %}
-                    <form method="post" class="form-grid" style="margin-top: 1rem;">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="save-rfid">
-                        {{ badge_save_form.user }}
-                        {{ badge_save_form.captured_identifier }}
-                        {{ badge_save_form.non_field_errors }}
-                        <div class="form-field">
-                            <label for="{{ badge_save_form.label.id_for_label }}">{{ badge_save_form.label.label }}</label>
-                            {{ badge_save_form.label }}
-                            {{ badge_save_form.label.errors }}
-                        </div>
-                        <div class="actions">
-                            <button type="submit">Save Badge</button>
-                        </div>
-                    </form>
-                {% endif %}
-            </div>
-
-            <div>
-                {% if fingerprint_capture %}
-                    <div class="readout {{ fingerprint_capture.state }}">
-                        <strong>{{ fingerprint_capture.status }}</strong>
-                        <div>{{ fingerprint_capture.detail }}</div>
-                    </div>
-                {% endif %}
-                {% if fingerprint_capture and fingerprint_capture.state == "success" %}
-                    <form method="post" class="form-grid" style="margin-top: 1rem;">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="save-fingerprint">
-                        {{ fingerprint_save_form.user }}
-                        {{ fingerprint_save_form.captured_identifier }}
-                        {{ fingerprint_save_form.non_field_errors }}
-                        <div class="form-field">
-                            <label for="{{ fingerprint_save_form.label.id_for_label }}">{{ fingerprint_save_form.label.label }}</label>
-                            {{ fingerprint_save_form.label }}
-                            {{ fingerprint_save_form.label.errors }}
-                        </div>
-                        <div class="actions">
-                            <button type="submit">Save Fingerprint</button>
-                        </div>
-                    </form>
-                {% endif %}
-            </div>
-        </div>
+                    {{ pin_form.pin.errors }}
+                </div>
+                <div class="actions">
+                    <button type="submit">Save PIN</button>
+                </div>
+            </form>
+        {% endif %}
     </section>
 {% endif %}
 
@@ -164,7 +142,6 @@
                 <tr>
                     <th>Type</th>
                     <th>Credential</th>
-                    <th>Label</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -189,7 +166,6 @@
                                 {{ credential.identifier }}
                             {% endif %}
                         </td>
-                        <td>{{ credential.label|default:"-" }}</td>
                         <td>{% if credential.active %}Active{% else %}Inactive{% endif %}</td>
                     </tr>
                 {% endfor %}

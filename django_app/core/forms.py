@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 
 from .models import (
     AccessPolicy,
+    Credential,
     ProtectedResource,
     normalize_access_tier,
     tier_requirement_definition,
@@ -75,22 +76,47 @@ class UserSelectionForm(forms.Form):
         self.fields["user"].empty_label = "Select a person"
 
 
+class EnrollmentChooserForm(forms.Form):
+    user = forms.ModelChoiceField(
+        queryset=User.objects.none(),
+        label="Person",
+    )
+    credential_type = forms.ChoiceField(
+        choices=(
+            (Credential.CredentialType.RFID, "Badge"),
+            (Credential.CredentialType.BIOMETRIC, "Fingerprint"),
+            (Credential.CredentialType.PIN, "PIN"),
+        ),
+        label="Credential",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["user"].queryset = User.objects.filter(is_active=True).order_by("username")
+        self.fields["user"].empty_label = "Select a person"
+
+    def clean_credential_type(self):
+        credential_type = str(self.cleaned_data.get("credential_type") or "").strip()
+        valid_types = {
+            Credential.CredentialType.RFID,
+            Credential.CredentialType.BIOMETRIC,
+            Credential.CredentialType.PIN,
+        }
+        if credential_type not in valid_types:
+            raise forms.ValidationError("Select a valid credential.")
+        return credential_type
+
+
 class CapturedCredentialForm(forms.Form):
     user = forms.ModelChoiceField(
         queryset=User.objects.none(),
         widget=forms.HiddenInput(),
     )
     captured_identifier = forms.CharField(widget=forms.HiddenInput())
-    label = forms.CharField(
-        required=False,
-        label="Label",
-        strip=True,
-    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["user"].queryset = User.objects.filter(is_active=True).order_by("username")
-        self.fields["label"].widget.attrs.update({"placeholder": "Optional label"})
 
     def clean_captured_identifier(self):
         identifier = str(self.cleaned_data.get("captured_identifier") or "").strip()

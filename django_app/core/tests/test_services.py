@@ -669,6 +669,7 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
             AuditEvent.objects.filter(event_type="credential_capture_succeeded", user=self.user).count(),
             1,
         )
+        mock_read_rfid.assert_called_once_with()
 
     @patch("core.services.node_red_client.enroll_fingerprint")
     def test_capture_enrollment_identifier_reads_fingerprint_from_node_red(self, mock_enroll_fingerprint):
@@ -688,6 +689,34 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
         self.assertEqual(result["identifier"], "9")
         self.assertEqual(
             AuditEvent.objects.filter(event_type="credential_capture_succeeded", user=self.user).count(),
+            1,
+        )
+        mock_enroll_fingerprint.assert_called_once_with(
+            {
+                "user_id": self.user.id,
+                "username": self.user.username,
+            }
+        )
+
+    @patch("core.services.node_red_client.read_rfid")
+    def test_capture_enrollment_identifier_handles_badge_capture_failure(self, mock_read_rfid):
+        mock_read_rfid.return_value = {
+            "ok": False,
+            "sensor": "rfid",
+            "error": "timeout",
+            "message": "Node-RED request timed out.",
+        }
+
+        result = capture_enrollment_identifier(
+            user_id=self.user.id,
+            credential_type=Credential.CredentialType.RFID,
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["identifier"], "")
+        self.assertEqual(result["message"], "Node-RED request timed out.")
+        self.assertEqual(
+            AuditEvent.objects.filter(event_type="credential_capture_failed", user=self.user).count(),
             1,
         )
 
