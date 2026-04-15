@@ -52,11 +52,11 @@
             {{ session.user.username|default:"Unknown" }}
         </li>
         <li>
-            <span class="detail-label">Resource</span>
-            {{ session.resource.name }}
+            <span class="detail-label">Tier</span>
+            {{ session.policy.get_tier_display|default:session.details.selected_tier|default:"Unspecified" }}
         </li>
         <li>
-            <span class="detail-label">Policy</span>
+            <span class="detail-label">Applied policy</span>
             {{ session.policy.name|default:"Fallback policy" }}
         </li>
         <li>

@@ -16,17 +16,16 @@ Example request:
 
 ```json
 {
-  "resource_id": 1,
   "user_id": 4,
-  "policy_id": 2
+  "tier": "elevated"
 }
 ```
 
 Notes:
-- `resource_id` is required.
 - `user_id` is required.
-- `policy_id` is optional. If omitted, Django uses the resource's first active
-  policy ordered by `id`.
+- `tier` is required.
+- Django resolves the one active demo policy configured for the selected tier.
+- `policy_id` is optional. If supplied, it must still match the selected tier.
 - If `MFA_API_SHARED_SECRET` is configured, callers must send `X-API-Key`.
 
 ## Response Shape
@@ -41,7 +40,7 @@ Successful responses use this envelope:
     "session": {
       "id": 12,
       "user": "operator",
-      "resource": "Main Lab Door",
+      "tier": "elevated",
       "policy": "Elevated Access",
       "status": "approved",
       "decision": "granted",

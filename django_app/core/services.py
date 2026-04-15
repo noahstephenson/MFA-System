@@ -70,6 +70,16 @@ def _get_resource_or_error(resource_id):
     return resource
 
 
+def _get_tier_or_error(tier):
+    normalized_tier = str(tier or "").strip().lower()
+    valid_tiers = {value for value, _label in AccessPolicy.Tier.choices}
+    if not normalized_tier:
+        raise _validation_error("Select an access tier.", field="tier")
+    if normalized_tier not in valid_tiers:
+        raise _validation_error("The selected access tier is invalid.", field="tier")
+    return normalized_tier
+
+
 def _get_policy_for_resource(resource, policy_id=None):
     active_policies = resource.policies.filter(active=True).order_by("id")
 
@@ -83,6 +93,54 @@ def _get_policy_for_resource(resource, policy_id=None):
             ) from exc
 
     return active_policies.first()
+
+
+def _get_policy_for_tier(tier, *, policy_id=None):
+    normalized_tier = _get_tier_or_error(tier)
+    active_policies = (
+        AccessPolicy.objects.select_related("resource")
+        .filter(
+            tier=normalized_tier,
+            active=True,
+            resource__active=True,
+        )
+        .order_by("id")
+    )
+
+    if policy_id is not None:
+        try:
+            return active_policies.get(id=policy_id)
+        except AccessPolicy.DoesNotExist as exc:
+            raise _validation_error(
+                "The selected access policy is not available for this tier.",
+                field="policy_id",
+            ) from exc
+
+    policy_count = active_policies.count()
+    if policy_count == 0:
+        raise _validation_error(
+            "No active demo policy is configured for the selected tier.",
+            field="tier",
+        )
+    if policy_count > 1:
+        raise _validation_error(
+            "Multiple active demo policies exist for the selected tier. Keep exactly one active policy per tier for this demo.",
+            field="tier",
+        )
+    return active_policies.first()
+
+
+def _resolve_session_context(*, tier=None, resource_id=None, policy_id=None):
+    if tier is not None:
+        policy = _get_policy_for_tier(tier, policy_id=policy_id)
+        return policy.resource, policy, policy.tier
+
+    if resource_id in (None, ""):
+        raise _validation_error("A resource or tier is required to start a session.")
+    resource = _get_resource_or_error(resource_id)
+    policy = _get_policy_for_resource(resource, policy_id=policy_id)
+    selected_tier = policy.tier if policy else None
+    return resource, policy, selected_tier
 
 
 def _get_session_details(session):
@@ -302,10 +360,23 @@ def _finalize_session(session, factor_result, *, request_provenance=None):
 
 
 @transaction.atomic
-def start_authentication_session(*, resource_id, user_id, policy_id=None, request_provenance=None):
+def start_authentication_session(
+    *,
+    user_id,
+    tier=None,
+    resource_id=None,
+    policy_id=None,
+    request_provenance=None,
+):
     user = _get_user_or_error(user_id)
-    resource = _get_resource_or_error(resource_id)
-    policy = _get_policy_for_resource(resource, policy_id=policy_id)
+    resource, policy, selected_tier = _resolve_session_context(
+        tier=tier,
+        resource_id=resource_id,
+        policy_id=policy_id,
+    )
+    session_details = _get_session_details(AuthenticationSession(details={}))
+    if selected_tier:
+        session_details["selected_tier"] = selected_tier
 
     session = AuthenticationSession.objects.create(
         user=user,
@@ -314,7 +385,7 @@ def start_authentication_session(*, resource_id, user_id, policy_id=None, reques
         status=AuthenticationSession.Status.IN_PROGRESS,
         decision=AuthenticationSession.Decision.PENDING,
         current_step=0,
-        details=_get_session_details(AuthenticationSession(details={})),
+        details=session_details,
     )
 
     create_audit_event(
@@ -324,6 +395,7 @@ def start_authentication_session(*, resource_id, user_id, policy_id=None, reques
         user=user,
         details=_merge_request_provenance(
             {
+                "tier": selected_tier,
                 "resource_id": resource.id,
                 "policy_id": policy.id if policy else None,
             },
@@ -340,10 +412,18 @@ def get_authentication_session(session_id):
         raise _validation_error("Authentication session not found.", field="session_id") from exc
 
 
-def run_node_red_access_attempt(*, resource_id, user_id, policy_id=None, request_provenance=None):
+def run_node_red_access_attempt(
+    *,
+    user_id,
+    tier=None,
+    resource_id=None,
+    policy_id=None,
+    request_provenance=None,
+):
     session = start_authentication_session(
-        resource_id=resource_id,
         user_id=user_id,
+        tier=tier,
+        resource_id=resource_id,
         policy_id=policy_id,
         request_provenance=request_provenance,
     )

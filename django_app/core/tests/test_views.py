@@ -8,13 +8,14 @@ from .base import CoreTestDataMixin
 
 
 class OperatorPageTests(CoreTestDataMixin, TestCase):
-    def test_access_start_page_loads(self):
+    def test_access_start_page_loads_with_tier_selector(self):
         response = self.client.get(reverse("core:access-start"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Start access attempt")
         self.assertContains(response, self.user.username)
-        self.assertContains(response, "Node-RED combined factor")
+        self.assertContains(response, "Access tier")
+        self.assertNotContains(response, "Protected resource")
 
     @patch("core.services.node_red_client.collect_factors")
     def test_access_start_post_redirects_to_result_page(self, mock_collect):
@@ -30,7 +31,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         response = self.client.post(
             reverse("core:access-start"),
-            {"user": self.user.id, "resource": self.resource.id},
+            {"user": self.user.id, "tier": self.policy.tier},
         )
 
         session = AuthenticationSession.objects.get()
@@ -50,7 +51,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         start_response = self.client.post(
             reverse("core:access-start"),
-            {"user": self.user.id, "resource": self.resource.id},
+            {"user": self.user.id, "tier": self.policy.tier},
         )
         session = AuthenticationSession.objects.get()
 
@@ -58,6 +59,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         result_response = self.client.get(reverse("core:access-result", args=[session.id]))
         self.assertContains(result_response, "Access granted")
         self.assertContains(result_response, self.rfid.identifier)
+        self.assertContains(result_response, "Tier")
 
     @patch("core.services.node_red_client.collect_factors")
     def test_access_result_page_renders_denied_state(self, mock_collect):
@@ -78,7 +80,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.client.post(
             reverse("core:access-start"),
-            {"user": self.user.id, "resource": self.resource.id},
+            {"user": self.user.id, "tier": self.policy.tier},
         )
         session = AuthenticationSession.objects.get()
 

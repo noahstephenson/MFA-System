@@ -8,6 +8,7 @@ from django.http import JsonResponse
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 
+from .models import AccessPolicy
 from .services import run_node_red_access_attempt
 
 
@@ -54,6 +55,16 @@ def _parse_positive_int(data, field_name, *, required=True):
     return integer_value
 
 
+def _parse_tier(data, field_name="tier"):
+    value = str(data.get(field_name) or "").strip().lower()
+    valid_tiers = {tier_value for tier_value, _label in AccessPolicy.Tier.choices}
+    if not value:
+        raise ValidationError({field_name: ["This field is required."]})
+    if value not in valid_tiers:
+        raise ValidationError({field_name: ["Select a valid tier."]})
+    return value
+
+
 def _request_provenance(request):
     provenance = {"channel": "api"}
     provenance["auth_mode"] = (
@@ -89,10 +100,11 @@ def _require_api_auth(request):
 
 
 def _session_payload(request, session):
+    session_details = session.details or {}
     return {
         "id": session.id,
         "user": session.user.username if session.user else None,
-        "resource": session.resource.name,
+        "tier": session.policy.tier if session.policy else session_details.get("selected_tier"),
         "policy": session.policy.name if session.policy else None,
         "status": session.status,
         "decision": session.decision,
@@ -119,8 +131,8 @@ def api_access_start(request):
     try:
         data = _parse_json_body(request)
         result = run_node_red_access_attempt(
-            resource_id=_parse_positive_int(data, "resource_id"),
             user_id=_parse_positive_int(data, "user_id"),
+            tier=_parse_tier(data),
             policy_id=_parse_positive_int(data, "policy_id", required=False),
             request_provenance=_request_provenance(request),
         )

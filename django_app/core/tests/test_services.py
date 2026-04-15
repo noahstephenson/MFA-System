@@ -9,10 +9,10 @@ from .base import CoreTestDataMixin
 
 
 class MVPServiceTests(CoreTestDataMixin, TestCase):
-    def test_start_authentication_session_creates_session_and_audit_event(self):
+    def test_start_authentication_session_creates_session_from_tier_and_audit_event(self):
         session = start_authentication_session(
-            resource_id=self.resource.id,
             user_id=self.user.id,
+            tier=self.policy.tier,
         )
 
         self.assertEqual(session.resource, self.resource)
@@ -20,6 +20,7 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
         self.assertEqual(session.policy, self.policy)
         self.assertEqual(session.status, AuthenticationSession.Status.IN_PROGRESS)
         self.assertEqual(session.decision, AuthenticationSession.Decision.PENDING)
+        self.assertEqual((session.details or {})["selected_tier"], self.policy.tier)
         self.assertEqual(AuditEvent.objects.filter(event_type="session_started").count(), 1)
 
     @patch("core.services.node_red_client.collect_factors")
@@ -42,8 +43,8 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
         }
 
         result = run_node_red_access_attempt(
-            resource_id=self.resource.id,
             user_id=self.user.id,
+            tier=self.policy.tier,
         )
 
         session = result["session"]
@@ -72,8 +73,8 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
         }
 
         result = run_node_red_access_attempt(
-            resource_id=self.resource.id,
             user_id=self.user.id,
+            tier=self.policy.tier,
         )
 
         session = result["session"]
@@ -101,8 +102,8 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
         }
 
         result = run_node_red_access_attempt(
-            resource_id=self.resource.id,
             user_id=self.user.id,
+            tier=self.policy.tier,
         )
 
         session = result["session"]
@@ -110,24 +111,24 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
         self.assertEqual((session.details or {})["result_message"], "Fingerprint service timed out.")
         self.assertEqual(AuditEvent.objects.filter(event_type="access_denied", session=session).count(), 1)
 
-    def test_start_authentication_session_rejects_invalid_user_resource_and_policy(self):
+    def test_start_authentication_session_rejects_invalid_user_tier_and_ambiguous_demo_policy(self):
         with self.assertRaises(ValidationError):
-            start_authentication_session(resource_id=9999, user_id=self.user.id)
+            start_authentication_session(user_id=9999, tier=self.policy.tier)
 
         with self.assertRaises(ValidationError):
-            start_authentication_session(resource_id=self.resource.id, user_id=9999)
+            start_authentication_session(user_id=self.user.id, tier="nope")
+
+        with self.assertRaises(ValidationError):
+            start_authentication_session(user_id=self.user.id, tier=AccessPolicy.Tier.HIGH)
 
         other_resource = ProtectedResource.objects.create(name="Vault", description="Separate area")
-        other_policy = AccessPolicy.objects.create(
+        AccessPolicy.objects.create(
             resource=other_resource,
-            name="Vault Policy",
-            description="Not for the server room.",
+            name="Vault Elevated Policy",
+            description="Another elevated policy for ambiguity testing.",
+            tier=self.policy.tier,
             required_factor_count=1,
         )
 
         with self.assertRaises(ValidationError):
-            start_authentication_session(
-                resource_id=self.resource.id,
-                user_id=self.user.id,
-                policy_id=other_policy.id,
-            )
+            start_authentication_session(user_id=self.user.id, tier=self.policy.tier)

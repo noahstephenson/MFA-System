@@ -17,6 +17,7 @@ class CoreTestDataMixin:
             resource=self.resource,
             name="Default Policy",
             description="Two-factor access for the room.",
+            tier=AccessPolicy.Tier.ELEVATED,
             required_factor_count=2,
         )
         self.rfid = Credential.objects.create(

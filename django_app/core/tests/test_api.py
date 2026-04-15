@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
+from ..models import AccessPolicy, ProtectedResource
 from .base import CoreTestDataMixin
 
 
@@ -22,13 +23,15 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
 
         response = self.client.post(
             reverse("core:api-access-start"),
-            data=json.dumps({"resource_id": self.resource.id, "user_id": self.user.id}),
+            data=json.dumps({"tier": self.policy.tier, "user_id": self.user.id}),
             content_type="application/json",
         )
 
         self.assertEqual(response.status_code, 201)
         payload = response.json()
         self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["session"]["tier"], self.policy.tier)
+        self.assertNotIn("resource", payload["data"]["session"])
         self.assertEqual(payload["data"]["session"]["status"], "approved")
         self.assertTrue(payload["data"]["session"]["is_access_granted"])
 
@@ -54,7 +57,7 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.json()
         self.assertFalse(payload["ok"])
-        self.assertIn("resource_id", payload["errors"])
+        self.assertIn("tier", payload["errors"])
 
     @override_settings(MFA_API_SHARED_SECRET="demo-secret")
     def test_api_access_start_requires_shared_secret_when_configured(self):
@@ -62,7 +65,7 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
 
         response = machine_client.post(
             reverse("core:api-access-start"),
-            data=json.dumps({"resource_id": self.resource.id, "user_id": self.user.id}),
+            data=json.dumps({"tier": self.policy.tier, "user_id": self.user.id}),
             content_type="application/json",
         )
 
@@ -93,7 +96,7 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
 
         response = machine_client.post(
             reverse("core:api-access-start"),
-            data=json.dumps({"resource_id": self.resource.id, "user_id": self.user.id}),
+            data=json.dumps({"tier": self.policy.tier, "user_id": self.user.id}),
             content_type="application/json",
             HTTP_X_API_KEY="demo-secret",
         )
@@ -124,7 +127,7 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
 
         response = self.client.post(
             reverse("core:api-access-start"),
-            data=json.dumps({"resource_id": self.resource.id, "user_id": self.user.id}),
+            data=json.dumps({"tier": self.policy.tier, "user_id": self.user.id}),
             content_type="application/json",
         )
 
@@ -156,7 +159,7 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
 
         response = self.client.post(
             reverse("core:api-access-start"),
-            data=json.dumps({"resource_id": self.resource.id, "user_id": self.user.id}),
+            data=json.dumps({"tier": self.policy.tier, "user_id": self.user.id}),
             content_type="application/json",
         )
 
@@ -167,3 +170,22 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
             payload["data"]["session"]["factor_collection_result"]["error"],
             "timeout",
         )
+
+    def test_api_access_start_rejects_ambiguous_tier(self):
+        other_resource = ProtectedResource.objects.create(name="Lobby Door", description="Second demo target.")
+        AccessPolicy.objects.create(
+            resource=other_resource,
+            name="Second Elevated Policy",
+            description="Competing elevated policy.",
+            tier=self.policy.tier,
+            required_factor_count=1,
+        )
+
+        response = self.client.post(
+            reverse("core:api-access-start"),
+            data=json.dumps({"tier": self.policy.tier, "user_id": self.user.id}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("tier", response.json()["errors"])

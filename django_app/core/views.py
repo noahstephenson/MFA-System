@@ -51,8 +51,8 @@ def access_start(request):
     if request.method == "POST" and form.is_valid():
         try:
             result = run_node_red_access_attempt(
-                resource_id=form.cleaned_data["resource"].id,
                 user_id=form.cleaned_data["user"].id,
+                tier=form.cleaned_data["tier"],
                 request_provenance=_request_provenance(request),
             )
         except ValidationError as exc:
