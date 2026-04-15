@@ -569,12 +569,6 @@ def enroll(request):
                 identifier=request.POST.get("captured_identifier", ""),
             )
 
-    selected_credentials = (
-        Credential.objects.filter(user=selected_user).order_by("credential_type", "label", "identifier")
-        if selected_user is not None
-        else []
-    )
-
     return render(
         request,
         "core/enroll.html",
@@ -588,6 +582,5 @@ def enroll(request):
             "pin_form": pin_form,
             "selected_credential_type": selected_credential_type,
             "selected_user": selected_user,
-            "selected_credentials": selected_credentials,
         },
     )

@@ -1,16 +1,13 @@
 {% extends "core/base.html" %}
 
-{% block title %}Enroll | MFA Operator{% endblock title %}
+{% block title %}Enroll | Access Station{% endblock title %}
 
 {% block content %}
 <section class="panel page-header">
     <div>
         <div class="eyebrow">Enroll</div>
-        <h1>Enroll credential</h1>
-        <p class="lead">Select a person, choose a credential, then capture or enter it.</p>
-    </div>
-    <div class="actions">
-        <a class="button secondary" href="{% url 'core:access-start' %}">Go to Access</a>
+        <h1>Enroll Credentials</h1>
+        <p class="lead">Choose a person and capture or enter a credential.</p>
     </div>
 </section>
 
@@ -44,7 +41,6 @@
         {% if selected_credential_type == "rfid" %}
             <div class="eyebrow">Badge</div>
             <h2>Scan badge</h2>
-            <p class="muted">Scan, review, save.</p>
 
             <form method="post" class="actions" style="margin-bottom: 1rem;">
                 {% csrf_token %}
@@ -75,7 +71,6 @@
         {% elif selected_credential_type == "biometric" %}
             <div class="eyebrow">Fingerprint</div>
             <h2>Capture fingerprint</h2>
-            <p class="muted">Capture, review, save.</p>
 
             <form method="post" class="actions" style="margin-bottom: 1rem;">
                 {% csrf_token %}
@@ -106,7 +101,6 @@
         {% else %}
             <div class="eyebrow">PIN</div>
             <h2>Enter PIN</h2>
-            <p class="muted">Type the PIN, then save.</p>
 
             <form method="post" class="form-grid">
                 {% csrf_token %}
@@ -126,55 +120,4 @@
         {% endif %}
     </section>
 {% endif %}
-
-<section class="panel">
-    <div class="eyebrow">Stored credentials</div>
-    <h2 style="margin-top: 0;">
-        {% if selected_user %}
-            {{ selected_user.username }}
-        {% else %}
-            Current credentials
-        {% endif %}
-    </h2>
-    {% if selected_user and selected_credentials %}
-        <table>
-            <thead>
-                <tr>
-                    <th>Type</th>
-                    <th>Credential</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for credential in selected_credentials %}
-                    <tr>
-                        <td>
-                            {% if credential.credential_type == "rfid" %}
-                                Badge
-                            {% elif credential.credential_type == "biometric" %}
-                                Fingerprint
-                            {% elif credential.credential_type == "pin" %}
-                                PIN
-                            {% else %}
-                                {{ credential.get_credential_type_display }}
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if credential.credential_type == "pin" %}
-                                Saved
-                            {% else %}
-                                {{ credential.identifier }}
-                            {% endif %}
-                        </td>
-                        <td>{% if credential.active %}Active{% else %}Inactive{% endif %}</td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% elif selected_user %}
-        <p class="muted">No credentials saved yet.</p>
-    {% else %}
-        <p class="muted">Choose a person to review saved credentials.</p>
-    {% endif %}
-</section>
 {% endblock content %}

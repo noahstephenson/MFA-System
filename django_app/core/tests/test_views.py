@@ -59,7 +59,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         response = self.client.get(reverse("core:home"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "MFA Operator")
+        self.assertContains(response, "Access Station")
         self.assertContains(response, "Enroll Credentials")
         self.assertContains(response, "Start Access Request")
 
@@ -72,7 +72,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Enroll credential")
+        self.assertContains(response, "Enroll Credentials")
         self.assertContains(response, "Credential")
         self.assertContains(response, "Scan Badge")
         self.assertNotContains(response, "Capture Fingerprint")
@@ -80,6 +80,8 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertNotContains(response, 'name="pin"', html=False)
         self.assertNotContains(response, "Identifier / value")
         self.assertNotContains(response, 'name="identifier"', html=False)
+        self.assertNotContains(response, "Stored credentials")
+        self.assertNotContains(response, "Admin")
 
     @patch("core.views.capture_enrollment_identifier")
     def test_badge_capture_flow_uses_hardware_result_before_save(self, mock_capture):
@@ -103,6 +105,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertContains(capture_response, "Ready to save")
         self.assertContains(capture_response, "UID CARD-2002")
         self.assertContains(capture_response, "Save Badge")
+        self.assertNotContains(capture_response, "Save Credential")
 
         save_response = self.client.post(
             reverse("core:enroll"),
@@ -149,6 +152,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertContains(capture_response, "Ready to save")
         self.assertContains(capture_response, "ID 7")
         self.assertContains(capture_response, "Save Fingerprint")
+        self.assertNotContains(capture_response, "Save Credential")
 
         save_response = self.client.post(
             reverse("core:enroll"),
@@ -210,6 +214,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertContains(rfid_response, "Scan badge")
         self.assertNotContains(rfid_response, "Enter PIN")
         self.assertNotContains(rfid_response, 'name="pin"', html=False)
+        self.assertNotContains(rfid_response, "Stored credentials")
         self.assertContains(pin_response, "Enter PIN")
         self.assertContains(pin_response, 'name="pin"', html=False)
         self.assertNotContains(pin_response, "Scan Badge")
