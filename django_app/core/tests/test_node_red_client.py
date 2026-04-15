@@ -194,6 +194,21 @@ class NodeRedClientTests(SimpleTestCase):
         self.assertEqual(result["fingerprint"]["error"], "missing")
 
     @patch("core.node_red_client._session.request")
+    def test_collect_factors_marks_missing_rfid_as_missing_not_success(self, mock_request):
+        mock_request.return_value = FakeResponse(
+            payload={
+                "fingerprint": {"ok": True, "matched": True, "finger_id": 4},
+            }
+        )
+
+        result = node_red_client.collect_factors({"session_id": 1})
+
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["rfid"]["ok"])
+        self.assertEqual(result["rfid"]["error"], "missing")
+        self.assertTrue(result["fingerprint"]["ok"])
+
+    @patch("core.node_red_client._session.request")
     def test_collect_factors_normalizes_negative_factor_result(self, mock_request):
         mock_request.return_value = FakeResponse(
             payload={
@@ -210,6 +225,34 @@ class NodeRedClientTests(SimpleTestCase):
         self.assertFalse(result["fingerprint"]["ok"])
         self.assertFalse(result["fingerprint"]["matched"])
         self.assertEqual(result["fingerprint"]["error"], "not_found")
+
+    @patch("core.node_red_client._session.request")
+    def test_collect_factors_rejects_wrong_data_types_as_invalid_payload(self, mock_request):
+        mock_request.return_value = FakeResponse(
+            payload={
+                "ok": True,
+                "rfid": ["CARD-1001"],
+                "fingerprint": "bad",
+            }
+        )
+
+        result = node_red_client.collect_factors({"session_id": 1})
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "invalid_payload")
+        self.assertEqual(result["rfid"]["error"], "invalid_payload")
+        self.assertEqual(result["fingerprint"]["error"], "invalid_payload")
+
+    @patch("core.node_red_client._session.request")
+    def test_collect_factors_rejects_empty_dict_payload(self, mock_request):
+        mock_request.return_value = FakeResponse(payload={})
+
+        result = node_red_client.collect_factors({"session_id": 1})
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "invalid_payload")
+        self.assertEqual(result["rfid"]["error"], "missing")
+        self.assertEqual(result["fingerprint"]["error"], "missing")
 
     @patch("core.node_red_client._session.request")
     def test_collect_factors_normalizes_error_payload(self, mock_request):
@@ -268,6 +311,29 @@ class NodeRedClientTests(SimpleTestCase):
         self.assertEqual(request_record["headers"]["Content-Type"], "application/json")
         self.assertEqual(request_record["body_json"], outbound_payload)
 
+    def test_collect_factors_real_http_request_omits_shared_secret_header_when_not_configured(self):
+        with RecordingNodeRedServer(
+            {
+                ("POST", "/api/auth/collect-factors"): {
+                    "status": 200,
+                    "body": {
+                        "ok": True,
+                        "rfid": {"ok": True, "uid": "CARD-1001"},
+                        "fingerprint": {"ok": True, "matched": True, "finger_id": 4},
+                    },
+                }
+            }
+        ) as server:
+            with self.settings(
+                NODE_RED_BASE_URL=server.base_url,
+                NODE_RED_TIMEOUT=2,
+                NODE_RED_SHARED_SECRET="",
+            ):
+                result = node_red_client.collect_factors({"session_id": 5})
+
+        self.assertTrue(result["ok"])
+        self.assertNotIn("X-API-Key", server.requests[0]["headers"])
+
     def test_collect_factors_real_http_invalid_json_response(self):
         with RecordingNodeRedServer(
             {
@@ -306,6 +372,22 @@ class NodeRedClientTests(SimpleTestCase):
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"], "timeout")
+
+    def test_collect_factors_real_http_500_json_error(self):
+        with RecordingNodeRedServer(
+            {
+                ("POST", "/api/auth/collect-factors"): {
+                    "status": 500,
+                    "body": {"error": "upstream_error", "message": "fingerprint worker crashed"},
+                }
+            }
+        ) as server:
+            with self.settings(NODE_RED_BASE_URL=server.base_url, NODE_RED_TIMEOUT=2):
+                result = node_red_client.collect_factors({"session_id": 31})
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "upstream_error")
+        self.assertEqual(result["message"], "fingerprint worker crashed")
 
 
 class NodeRedDjangoBoundaryTests(CoreTestDataMixin, TestCase):
@@ -397,4 +479,34 @@ class NodeRedDjangoBoundaryTests(CoreTestDataMixin, TestCase):
         self.assertEqual(
             payload["data"]["session"]["factor_collection_result"]["error"],
             "timeout",
+        )
+
+    def test_api_access_start_real_http_malformed_payload_denies_cleanly(self):
+        with RecordingNodeRedServer(
+            {
+                ("POST", "/api/auth/collect-factors"): {
+                    "status": 200,
+                    "body": {"ok": True, "rfid": [], "fingerprint": {}},
+                }
+            }
+        ) as server:
+            with self.settings(NODE_RED_BASE_URL=server.base_url, NODE_RED_TIMEOUT=2):
+                response = self.client.post(
+                    reverse("core:api-access-start"),
+                    data=json.dumps(
+                        {
+                            "resource_id": self.resource.id,
+                            "tier": self.tier1_policy.tier,
+                            "user_id": self.user.id,
+                        }
+                    ),
+                    content_type="application/json",
+                )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertFalse(payload["data"]["session"]["is_access_granted"])
+        self.assertEqual(
+            payload["data"]["session"]["factor_collection_result"]["error"],
+            "invalid_payload",
         )

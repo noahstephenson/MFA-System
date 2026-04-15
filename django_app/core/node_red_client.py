@@ -301,28 +301,49 @@ def collect_factors(payload):
         or {}
     )
     has_factor_sections = bool(rfid_payload or fingerprint_payload)
+    normalized_rfid = (
+        _normalize_rfid_payload(rfid_payload)
+        if rfid_payload
+        else _base_error("rfid", "missing", "RFID data was not returned.")
+    )
+    normalized_fingerprint = (
+        _normalize_fingerprint_payload(fingerprint_payload)
+        if fingerprint_payload
+        else _base_error(
+            "fingerprint",
+            "missing",
+            "Fingerprint data was not returned.",
+            extra={"matched": False},
+        )
+    )
+    has_invalid_payload = any(
+        sensor_result.get("error") == "invalid_payload"
+        for sensor_result in (normalized_rfid, normalized_fingerprint)
+        if sensor_result.get("error") != "missing"
+    )
     explicit_ok = data.get("ok")
-    overall_ok = bool(explicit_ok) if explicit_ok is not None else has_factor_sections
+    if explicit_ok is False:
+        overall_ok = False
+    else:
+        overall_ok = has_factor_sections and not has_invalid_payload
+
+    error = str(data.get("error") or "")
+    message = str(data.get("message") or "")
+    if not has_factor_sections and not error:
+        error = "invalid_payload"
+        if not message:
+            message = "Node-RED did not return any factor data."
+    elif has_invalid_payload and not error:
+        error = "invalid_payload"
+        if not message:
+            message = "Node-RED returned an invalid factor payload."
 
     return {
         "ok": overall_ok,
-        "error": str(data.get("error") or ""),
-        "message": str(data.get("message") or ""),
-        "rfid": (
-            _normalize_rfid_payload(rfid_payload)
-            if rfid_payload
-            else _base_error("rfid", "missing", "RFID data was not returned.")
-        ),
-        "fingerprint": (
-            _normalize_fingerprint_payload(fingerprint_payload)
-            if fingerprint_payload
-            else _base_error(
-                "fingerprint",
-                "missing",
-                "Fingerprint data was not returned.",
-                extra={"matched": False},
-            )
-        ),
+        "error": error,
+        "message": message,
+        "rfid": normalized_rfid,
+        "fingerprint": normalized_fingerprint,
         "raw": data,
         "status_code": response["status_code"],
     }
