@@ -603,6 +603,7 @@ def run_node_red_access_attempt(
             "user_id": session.user_id,
             "policy_id": session.policy_id,
             "required_factor_count": session.required_factor_count,
+            "allowed_factor_types": _required_factor_types_for_session(session),
         }
     )
 

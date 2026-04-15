@@ -440,6 +440,51 @@ class NodeRedDjangoBoundaryTests(CoreTestDataMixin, TestCase):
                 "user_id": self.user.id,
                 "policy_id": self.tier1_policy.id,
                 "required_factor_count": 2,
+                "allowed_factor_types": ["rfid", "biometric"],
+            },
+        )
+
+    def test_api_access_start_real_http_tier2_request_tells_node_red_to_skip_fingerprint(self):
+        with RecordingNodeRedServer(
+            {
+                ("POST", "/api/auth/collect-factors"): {
+                    "status": 200,
+                    "body": {
+                        "ok": True,
+                        "message": "",
+                        "rfid": {"ok": True, "sensor": "rfid", "uid": self.rfid.identifier, "message": ""},
+                    },
+                }
+            }
+        ) as server:
+            with self.settings(NODE_RED_BASE_URL=server.base_url, NODE_RED_TIMEOUT=2):
+                response = self.client.post(
+                    reverse("core:api-access-start"),
+                    data=json.dumps(
+                        {
+                            "resource_id": self.resource.id,
+                            "tier": self.tier2_policy.tier,
+                            "user_id": self.user.id,
+                            "knowledge_factor": self.pin.identifier,
+                        }
+                    ),
+                    content_type="application/json",
+                )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["data"]["session"]["is_access_granted"])
+        self.assertEqual(len(server.requests), 1)
+        self.assertEqual(
+            server.requests[0]["body_json"],
+            {
+                "session_id": payload["data"]["session"]["id"],
+                "resource_id": self.resource.id,
+                "user_id": self.user.id,
+                "policy_id": self.tier2_policy.id,
+                "required_factor_count": 2,
+                "allowed_factor_types": ["rfid", "pin"],
             },
         )
 
