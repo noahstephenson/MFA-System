@@ -59,7 +59,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         response = self.client.get(reverse("core:home"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Access Station")
+        self.assertContains(response, "MFA Demo")
         self.assertContains(response, "Enroll Credentials")
         self.assertContains(response, "Start Access Request")
 
