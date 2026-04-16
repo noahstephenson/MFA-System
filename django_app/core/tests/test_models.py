@@ -15,6 +15,52 @@ from .base import CoreTestDataMixin
 
 
 class CoreModelTests(CoreTestDataMixin, TestCase):
+    def test_credential_table_matches_current_model_schema(self):
+        with connection.cursor() as cursor:
+            description = connection.introspection.get_table_description(
+                cursor,
+                Credential._meta.db_table,
+            )
+
+        column_names = {column.name for column in description}
+        self.assertEqual(
+            column_names,
+            {
+                "id",
+                "credential_type",
+                "identifier",
+                "label",
+                "active",
+                "metadata",
+                "created_at",
+                "updated_at",
+                "user_id",
+            },
+        )
+
+    def test_access_policy_table_matches_current_model_schema(self):
+        with connection.cursor() as cursor:
+            description = connection.introspection.get_table_description(
+                cursor,
+                AccessPolicy._meta.db_table,
+            )
+
+        column_names = {column.name for column in description}
+        self.assertEqual(
+            column_names,
+            {
+                "id",
+                "name",
+                "description",
+                "tier",
+                "required_factor_count",
+                "active",
+                "created_at",
+                "updated_at",
+                "resource_id",
+            },
+        )
+
     def test_authentication_session_table_matches_current_model_schema(self):
         with connection.cursor() as cursor:
             description = connection.introspection.get_table_description(

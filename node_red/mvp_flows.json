@@ -242,6 +242,121 @@
         "wires": []
     },
     {
+        "id": "f1a2b3c4d5e60411",
+        "type": "http in",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "POST /api/fingerprint/enroll",
+        "url": "/api/fingerprint/enroll",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 190,
+        "y": 300,
+        "wires": [
+            [
+                "f1a2b3c4d5e60412"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60412",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Build Fingerprint Enroll Exec Payload",
+        "func": "let body = msg.payload;\nif (typeof body === \"string\" && body.trim()) {\n    try {\n        body = JSON.parse(body);\n    } catch (error) {\n        body = {};\n    }\n}\nif (!body || typeof body !== \"object\" || Array.isArray(body)) {\n    body = {};\n}\nconst timeout = Number(body.timeout_seconds);\nconst effectiveTimeout = Number.isFinite(timeout) && timeout > 0 ? timeout : 30;\nconst rawLocation = body.id !== undefined ? body.id : (body.finger_id !== undefined ? body.finger_id : body.user_id);\nconst location = Number(rawLocation);\nif (!Number.isFinite(location) || location < 1) {\n    msg.statusCode = 400;\n    msg.payload = {\n        ok: false,\n        sensor: \"fingerprint\",\n        error: \"missing_id\",\n        message: \"Fingerprint enroll requires id, finger_id, or user_id.\"\n    };\n    return [msg, null];\n}\nmsg.payload = `/home/raspi/MFA-System/node_red/fingerprint_enroll.py --id ${Math.trunc(location)} --timeout ${effectiveTimeout}`;\nreturn [null, msg];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 470,
+        "y": 300,
+        "wires": [
+            [
+                "f1a2b3c4d5e60416"
+            ],
+            [
+                "f1a2b3c4d5e60413"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60413",
+        "type": "exec",
+        "z": "7b1c7d3dd56a8c11",
+        "command": "/home/raspi/py313env/bin/python",
+        "addpay": "payload",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "Run fingerprint_enroll.py",
+        "x": 760,
+        "y": 300,
+        "wires": [
+            [
+                "f1a2b3c4d5e60414"
+            ],
+            [
+                "f1a2b3c4d5e60415"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60414",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Normalize Fingerprint Enroll JSON",
+        "func": "let raw = msg.payload;\nif (Buffer.isBuffer(raw)) {\n    raw = raw.toString();\n}\nif (typeof raw !== \"string\") {\n    raw = JSON.stringify(raw || {});\n}\nraw = raw.trim();\nlet data;\ntry {\n    data = JSON.parse(raw);\n} catch (error) {\n    msg.statusCode = 502;\n    msg.payload = { ok: false, sensor: \"fingerprint\", error: \"invalid_json\", message: \"Fingerprint enroll script returned invalid JSON.\" };\n    return msg;\n}\nif (data && data.ok === true && data.finger_id !== undefined && data.finger_id !== null) {\n    msg.statusCode = 200;\n    msg.payload = {\n        ok: true,\n        sensor: \"fingerprint\",\n        finger_id: Number(data.finger_id),\n        message: String(data.message || \"\")\n    };\n    return msg;\n}\nconst errorCode = String((data && data.error) || \"fingerprint_error\");\nconst message = String((data && data.message) || \"Fingerprint enrollment failed.\");\nmsg.statusCode = errorCode === \"timeout\" ? 504 : 502;\nmsg.payload = { ok: false, sensor: \"fingerprint\", error: errorCode, message };\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1020,
+        "y": 280,
+        "wires": [
+            [
+                "f1a2b3c4d5e60416"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60415",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Fingerprint Enroll Exec Error",
+        "func": "const stderr = Buffer.isBuffer(msg.payload) ? msg.payload.toString() : String(msg.payload || \"\");\nmsg.statusCode = 500;\nmsg.payload = {\n    ok: false,\n    sensor: \"fingerprint\",\n    error: \"execution_error\",\n    message: stderr.trim() || \"Fingerprint enroll command failed.\"\n};\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1010,
+        "y": 320,
+        "wires": [
+            [
+                "f1a2b3c4d5e60416"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60416",
+        "type": "http response",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "",
+        "statusCode": "",
+        "headers": {},
+        "x": 1230,
+        "y": 300,
+        "wires": []
+    },
+    {
         "id": "f1a2b3c4d5e60311",
         "type": "http in",
         "z": "7b1c7d3dd56a8c11",
