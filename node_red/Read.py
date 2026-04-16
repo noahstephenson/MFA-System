@@ -2,9 +2,8 @@
 
 import argparse
 import json
-import os
-import signal
 import sys
+import time
 
 
 def _emit(payload):
@@ -46,14 +45,6 @@ def _normalize_uid(tag_id):
     return hex_uid.upper()
 
 
-class _ReadTimeoutError(TimeoutError):
-    pass
-
-
-def _timeout_handler(_signum, _frame):
-    raise _ReadTimeoutError()
-
-
 def _parse_args():
     parser = argparse.ArgumentParser(description="Read one RFID tag and emit JSON.")
     parser.add_argument(
@@ -76,26 +67,19 @@ def _read_once(timeout_seconds):
         )
 
     reader = None
-    previous_handler = None
-    timer_enabled = bool(timeout_seconds and timeout_seconds > 0 and os.name != "nt")
+    deadline = time.monotonic() + timeout_seconds if timeout_seconds and timeout_seconds > 0 else None
     try:
         reader = SimpleMFRC522()
-        if timer_enabled:
-            previous_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
-
-        tag_id, text = reader.read()
-        return _success_payload(tag_id, text or "")
-    except _ReadTimeoutError:
-        return _error_payload("timeout", "RFID read timed out.")
+        while True:
+            tag_id, text = reader.read_no_block()
+            if tag_id:
+                return _success_payload(tag_id, text or "")
+            if deadline is not None and time.monotonic() >= deadline:
+                return _error_payload("timeout", "RFID read timed out.")
+            time.sleep(0.1)
     except Exception as exc:
         return _error_payload("hardware_error", f"RFID read failed: {exc}")
     finally:
-        if timer_enabled:
-            signal.setitimer(signal.ITIMER_REAL, 0)
-            if previous_handler is not None:
-                restore_handler = previous_handler.value if hasattr(previous_handler, "value") else previous_handler
-                signal.signal(signal.SIGALRM, restore_handler)
         if reader is not None:
             try:
                 GPIO.cleanup()

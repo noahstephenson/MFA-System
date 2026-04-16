@@ -15,7 +15,7 @@
         "x": 180,
         "y": 40,
         "wires": [],
-        "text": "Edit these placeholders after import before you deploy:\n- /usr/bin/python3\n- /home/raspi/MFA-System\n- http://127.0.0.1:1880\nThe RFID and fingerprint endpoints run repo scripts directly. The combined endpoint calls those two Node-RED HTTP endpoints in sequence."
+        "text": "Edit these placeholders after import before you deploy:\n- /usr/bin/python3\n- /home/raspi/MFA-System\n- http://127.0.0.1:1880\nThe RFID and fingerprint endpoints run repo scripts directly. The combined endpoint runs RFID directly and calls the fingerprint Node-RED HTTP endpoint when required."
     },
     {
         "id": "f1a2b3c4d5e60111",
@@ -427,7 +427,7 @@
         "type": "function",
         "z": "7b1c7d3dd56a8c11",
         "name": "Call /api/rfid/read",
-        "func": "msg.method = \"POST\";\nmsg.url = \"http://127.0.0.1:1880/api/rfid/read\";\nmsg.headers = {\"Content-Type\": \"application/json\"};\nmsg.payload = { timeout_seconds: msg.mfa.rfidTimeoutSeconds };\nreturn msg;",
+        "func": "msg.payload = `/home/raspi/MFA-System/node_red/Read.py --timeout ${msg.mfa.rfidTimeoutSeconds}`;\nreturn msg;",
         "outputs": 1,
         "timeout": "",
         "noerr": 0,
@@ -438,7 +438,7 @@
         "y": 340,
         "wires": [
             [
-                "f1a2b3c4d5e60315"
+                "f1a2b3c4d5e60320"
             ]
         ]
     },
@@ -649,5 +649,49 @@
         "x": 2920,
         "y": 360,
         "wires": []
+    },
+    {
+        "id": "f1a2b3c4d5e6031f",
+        "type": "function",
+        "z": "7b1c7d3dd56a8c11",
+        "name": "Normalize Combined RFID JSON",
+        "func": "if (!msg.mfa) {\n    return null;\n}\nlet raw = msg.payload;\nif (Buffer.isBuffer(raw)) {\n    raw = raw.toString();\n}\nif (typeof raw !== \"string\") {\n    raw = JSON.stringify(raw || {});\n}\nraw = raw.trim();\ntry {\n    msg.payload = JSON.parse(raw);\n} catch (error) {\n    msg.payload = { ok: false, sensor: \"rfid\", error: \"invalid_json\", message: \"RFID script returned invalid JSON.\" };\n}\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 950,
+        "y": 180,
+        "wires": [
+            [
+                "f1a2b3c4d5e60316"
+            ]
+        ]
+    },
+    {
+        "id": "f1a2b3c4d5e60320",
+        "type": "exec",
+        "z": "7b1c7d3dd56a8c11",
+        "command": "/home/raspi/py313env/bin/python",
+        "addpay": "payload",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "Run Read.py for Collect Factors",
+        "x": 690,
+        "y": 180,
+        "wires": [
+            [
+                "f1a2b3c4d5e6031f"
+            ],
+            [
+                "f1a2b3c4d5e6031f"
+            ],
+            []
+        ]
     }
 ]
