@@ -13,9 +13,15 @@ User = get_user_model()
 
 
 class AccessStartForm(forms.Form):
-    user = forms.ModelChoiceField(
-        queryset=User.objects.none(),
-        label="Person",
+    username = forms.CharField(
+        label="Subject",
+        strip=True,
+        widget=forms.TextInput(
+            attrs={
+                "autocomplete": "username",
+                "placeholder": "Enter username",
+            },
+        ),
     )
     resource = forms.ModelChoiceField(
         queryset=ProtectedResource.objects.none(),
@@ -40,10 +46,18 @@ class AccessStartForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["user"].queryset = User.objects.filter(is_active=True).order_by("username")
         self.fields["resource"].queryset = ProtectedResource.objects.filter(active=True).order_by("name")
-        self.fields["user"].empty_label = None
         self.fields["resource"].empty_label = None
+
+    def clean_username(self):
+        username = str(self.cleaned_data.get("username") or "").strip()
+        if not username:
+            raise forms.ValidationError("Enter a username.")
+        user = User.objects.filter(username__iexact=username, is_active=True).first()
+        if user is None:
+            raise forms.ValidationError("Enter a known active username.")
+        self.cleaned_data["user"] = user
+        return username
 
     def clean_tier(self):
         tier = normalize_access_tier(self.cleaned_data.get("tier"))
@@ -66,24 +80,24 @@ class AccessStartForm(forms.Form):
 class UserSelectionForm(forms.Form):
     user = forms.ModelChoiceField(
         queryset=User.objects.none(),
-        label="Person",
+        label="Subject",
         required=False,
     )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["user"].queryset = User.objects.filter(is_active=True).order_by("username")
-        self.fields["user"].empty_label = "Select a person"
+        self.fields["user"].empty_label = "Select a subject"
 
 
 class EnrollmentChooserForm(forms.Form):
-    person_name = forms.CharField(
-        label="Person",
+    username = forms.CharField(
+        label="Subject",
         strip=True,
         widget=forms.TextInput(
             attrs={
-                "autocomplete": "name",
-                "placeholder": "Enter name",
+                "autocomplete": "username",
+                "placeholder": "Enter username",
             },
         ),
     )
@@ -96,11 +110,11 @@ class EnrollmentChooserForm(forms.Form):
         label="Credential",
     )
 
-    def clean_person_name(self):
-        person_name = str(self.cleaned_data.get("person_name") or "").strip()
-        if not person_name:
-            raise forms.ValidationError("Enter a person name.")
-        return person_name
+    def clean_username(self):
+        username = str(self.cleaned_data.get("username") or "").strip()
+        if not username:
+            raise forms.ValidationError("Enter a username.")
+        return username
 
     def clean_credential_type(self):
         credential_type = str(self.cleaned_data.get("credential_type") or "").strip()
@@ -115,16 +129,16 @@ class EnrollmentChooserForm(forms.Form):
 
 
 class CapturedCredentialForm(forms.Form):
-    person_name = forms.CharField(
+    username = forms.CharField(
         widget=forms.HiddenInput(),
     )
     captured_identifier = forms.CharField(widget=forms.HiddenInput())
 
-    def clean_person_name(self):
-        person_name = str(self.cleaned_data.get("person_name") or "").strip()
-        if not person_name:
-            raise forms.ValidationError("Enter a person name.")
-        return person_name
+    def clean_username(self):
+        username = str(self.cleaned_data.get("username") or "").strip()
+        if not username:
+            raise forms.ValidationError("Enter a username.")
+        return username
 
     def clean_captured_identifier(self):
         identifier = str(self.cleaned_data.get("captured_identifier") or "").strip()
@@ -134,7 +148,7 @@ class CapturedCredentialForm(forms.Form):
 
 
 class PinEnrollmentForm(forms.Form):
-    person_name = forms.CharField(
+    username = forms.CharField(
         widget=forms.HiddenInput(),
     )
     pin = forms.CharField(
@@ -159,11 +173,11 @@ class PinEnrollmentForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.fields["label"].widget.attrs.update({"placeholder": "Optional label"})
 
-    def clean_person_name(self):
-        person_name = str(self.cleaned_data.get("person_name") or "").strip()
-        if not person_name:
-            raise forms.ValidationError("Enter a person name.")
-        return person_name
+    def clean_username(self):
+        username = str(self.cleaned_data.get("username") or "").strip()
+        if not username:
+            raise forms.ValidationError("Enter a username.")
+        return username
 
     def clean_pin(self):
         pin = str(self.cleaned_data.get("pin") or "").strip()

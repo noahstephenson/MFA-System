@@ -90,10 +90,10 @@ def _operator_message(message):
         "Node-RED request timed out.": "Factor service timed out.",
         "Node-RED returned an invalid factor payload.": "Factor data was incomplete.",
         "Node-RED did not return any factor data.": "No factor data was returned.",
-        "RFID credential is not enrolled for this user.": "Badge is not enrolled for this person.",
+        "RFID credential is not enrolled for this user.": "Badge is not enrolled for this subject.",
         "RFID data was not collected.": "Badge scan unavailable.",
         "RFID data was not returned.": "Badge scan unavailable.",
-        "Fingerprint credential is not enrolled for this user.": "Fingerprint is not enrolled for this person.",
+        "Fingerprint credential is not enrolled for this user.": "Fingerprint is not enrolled for this subject.",
         "Fingerprint data was not returned.": "Fingerprint result unavailable.",
     }
     if cleaned in rewrites:
@@ -125,45 +125,45 @@ def _selected_user_from_value(raw_user_id):
     return User.objects.filter(id=int(raw_user_id), is_active=True).first()
 
 
-def _normalize_person_name(raw_name):
-    return str(raw_name or "").strip()
+def _normalize_username(raw_username):
+    return str(raw_username or "").strip()
 
 
-def _username_for_person_name(person_name):
-    username = slugify(person_name).replace("-", "_")
-    return username or person_name
+def _canonical_username(raw_username):
+    normalized_username = _normalize_username(raw_username)
+    username = slugify(normalized_username).replace("-", "_")
+    return username or normalized_username
 
 
-def _get_or_create_person(person_name):
-    normalized_name = _normalize_person_name(person_name)
-    if not normalized_name:
+def _get_or_create_subject(username):
+    canonical_username = _canonical_username(username)
+    if not canonical_username:
         return None
 
-    username = _username_for_person_name(normalized_name)
-    user = User.objects.filter(username__iexact=username).first()
+    user = User.objects.filter(username__iexact=canonical_username).first()
     if user is None:
-        user = User.objects.create_user(username=username)
+        user = User.objects.create_user(username=canonical_username)
     if not user.is_active:
         user.is_active = True
         user.save(update_fields=["is_active"])
     return user
 
 
-def _selected_person_name_from_request(request):
-    return _normalize_person_name(request.POST.get("person_name") or request.GET.get("person_name"))
+def _selected_username_from_request(request):
+    return _normalize_username(request.POST.get("username") or request.GET.get("username"))
 
 
 def _selected_user_from_request(request):
-    person_name = _selected_person_name_from_request(request)
-    if person_name:
-        return _get_or_create_person(person_name)
+    username = _selected_username_from_request(request)
+    if username:
+        return _get_or_create_subject(username)
     return _selected_user_from_value(request.POST.get("user", "")) or _selected_user_from_value(request.GET.get("user", ""))
 
 
-def _initial_person_value(selected_user, person_name=""):
-    if person_name:
-        return {"person_name": person_name}
-    return {"person_name": selected_user.username} if selected_user is not None else {}
+def _initial_username_value(selected_user, username=""):
+    if username:
+        return {"username": username}
+    return {"username": selected_user.username} if selected_user is not None else {}
 
 
 def _selected_credential_type(request):
@@ -446,13 +446,13 @@ def access_result(request, session_id):
 
 
 def enroll(request):
-    selected_person_name = _selected_person_name_from_request(request)
+    selected_username = _selected_username_from_request(request)
     selected_user = _selected_user_from_request(request)
     selected_credential_type = _selected_credential_type(request)
     badge_capture = None
     fingerprint_capture = None
     chooser_initial = {
-        **_initial_person_value(selected_user, selected_person_name),
+        **_initial_username_value(selected_user, selected_username),
         "credential_type": selected_credential_type,
     }
 
@@ -461,20 +461,20 @@ def enroll(request):
         chooser_form = EnrollmentChooserForm(request.POST)
         chooser_form.fields["credential_type"].required = False
 
-    person_initial = _initial_person_value(selected_user, selected_person_name)
-    badge_save_form = CapturedCredentialForm(initial=person_initial)
-    fingerprint_save_form = CapturedCredentialForm(initial=person_initial)
-    pin_form = PinEnrollmentForm(initial=person_initial)
+    username_initial = _initial_username_value(selected_user, selected_username)
+    badge_save_form = CapturedCredentialForm(initial=username_initial)
+    fingerprint_save_form = CapturedCredentialForm(initial=username_initial)
+    pin_form = PinEnrollmentForm(initial=username_initial)
 
     if request.method == "POST":
         action = str(request.POST.get("action") or "").strip()
         if action and selected_user is None:
-            messages.warning(request, "Enter a person name first.")
+            messages.warning(request, "Enter a username first.")
         elif action == "save-pin":
             pin_form = PinEnrollmentForm(request.POST)
             if pin_form.is_valid():
                 try:
-                    user = _get_or_create_person(pin_form.cleaned_data["person_name"])
+                    user = _get_or_create_subject(pin_form.cleaned_data["username"])
                     result = enroll_credential(
                         user_id=user.id,
                         credential_type=Credential.CredentialType.PIN,
@@ -490,7 +490,7 @@ def enroll(request):
                         _credential_saved_message(result["credential"], created=result["created"]),
                     )
                     return redirect(
-                        f"{reverse('core:enroll')}?person_name={result['credential'].user.username}&credential_type={Credential.CredentialType.PIN}"
+                        f"{reverse('core:enroll')}?username={result['credential'].user.username}&credential_type={Credential.CredentialType.PIN}"
                     )
         elif action == "capture-rfid":
             try:
@@ -515,7 +515,7 @@ def enroll(request):
                 if capture_result["ok"]:
                     badge_save_form = CapturedCredentialForm(
                         initial={
-                            **_initial_person_value(selected_user, selected_person_name),
+                            **_initial_username_value(selected_user, selected_username),
                             "captured_identifier": capture_result["identifier"],
                         }
                     )
@@ -523,7 +523,7 @@ def enroll(request):
             badge_save_form = CapturedCredentialForm(request.POST)
             if badge_save_form.is_valid():
                 try:
-                    user = _get_or_create_person(badge_save_form.cleaned_data["person_name"])
+                    user = _get_or_create_subject(badge_save_form.cleaned_data["username"])
                     result = enroll_credential(
                         user_id=user.id,
                         credential_type=Credential.CredentialType.RFID,
@@ -539,7 +539,7 @@ def enroll(request):
                         _credential_saved_message(result["credential"], created=result["created"]),
                     )
                     return redirect(
-                        f"{reverse('core:enroll')}?person_name={result['credential'].user.username}&credential_type={Credential.CredentialType.RFID}"
+                        f"{reverse('core:enroll')}?username={result['credential'].user.username}&credential_type={Credential.CredentialType.RFID}"
                     )
             else:
                 if not str(request.POST.get("captured_identifier") or "").strip():
@@ -571,7 +571,7 @@ def enroll(request):
                 if capture_result["ok"]:
                     fingerprint_save_form = CapturedCredentialForm(
                         initial={
-                            **_initial_person_value(selected_user, selected_person_name),
+                            **_initial_username_value(selected_user, selected_username),
                             "captured_identifier": capture_result["identifier"],
                         }
                     )
@@ -579,7 +579,7 @@ def enroll(request):
             fingerprint_save_form = CapturedCredentialForm(request.POST)
             if fingerprint_save_form.is_valid():
                 try:
-                    user = _get_or_create_person(fingerprint_save_form.cleaned_data["person_name"])
+                    user = _get_or_create_subject(fingerprint_save_form.cleaned_data["username"])
                     result = enroll_credential(
                         user_id=user.id,
                         credential_type=Credential.CredentialType.BIOMETRIC,
@@ -595,7 +595,7 @@ def enroll(request):
                         _credential_saved_message(result["credential"], created=result["created"]),
                     )
                     return redirect(
-                        f"{reverse('core:enroll')}?person_name={result['credential'].user.username}&credential_type={Credential.CredentialType.BIOMETRIC}"
+                        f"{reverse('core:enroll')}?username={result['credential'].user.username}&credential_type={Credential.CredentialType.BIOMETRIC}"
                     )
             else:
                 if not str(request.POST.get("captured_identifier") or "").strip():

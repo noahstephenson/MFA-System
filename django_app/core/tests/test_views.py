@@ -71,7 +71,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
     def test_enrollment_page_renders_operator_actions_without_manual_hardware_fields(self):
         response = self.client.get(
-            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.RFID}"
+            f"{reverse('core:enroll')}?username=alice&credential_type={Credential.CredentialType.RFID}"
         )
 
         self.assertEqual(response.status_code, 200)
@@ -99,7 +99,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "capture-rfid",
-                "person_name": "alice",
+                "username": "alice",
                 "credential_type": Credential.CredentialType.RFID,
             },
         )
@@ -114,7 +114,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "save-rfid",
-                "person_name": "alice",
+                "username": "alice",
                 "credential_type": Credential.CredentialType.RFID,
                 "captured_identifier": "CARD-2002",
             },
@@ -122,7 +122,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertRedirects(
             save_response,
-            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.RFID}",
+            f"{reverse('core:enroll')}?username=alice&credential_type={Credential.CredentialType.RFID}",
         )
         self.assertTrue(
             Credential.objects.filter(
@@ -146,7 +146,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "capture-fingerprint",
-                "person_name": "alice",
+                "username": "alice",
                 "credential_type": Credential.CredentialType.BIOMETRIC,
             },
         )
@@ -161,7 +161,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "save-fingerprint",
-                "person_name": "alice",
+                "username": "alice",
                 "credential_type": Credential.CredentialType.BIOMETRIC,
                 "captured_identifier": "7",
             },
@@ -169,7 +169,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertRedirects(
             save_response,
-            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.BIOMETRIC}",
+            f"{reverse('core:enroll')}?username=alice&credential_type={Credential.CredentialType.BIOMETRIC}",
         )
         self.assertTrue(
             Credential.objects.filter(
@@ -185,7 +185,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "save-pin",
-                "person_name": "alice",
+                "username": "alice",
                 "credential_type": Credential.CredentialType.PIN,
                 "pin": "1357",
                 "label": "Shift PIN",
@@ -194,7 +194,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertRedirects(
             response,
-            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.PIN}",
+            f"{reverse('core:enroll')}?username=alice&credential_type={Credential.CredentialType.PIN}",
         )
         self.assertTrue(
             Credential.objects.filter(
@@ -206,12 +206,12 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             ).exists()
         )
 
-    def test_pin_enrollment_creates_typed_person(self):
+    def test_pin_enrollment_creates_typed_subject(self):
         response = self.client.post(
             reverse("core:enroll"),
             {
                 "action": "save-pin",
-                "person_name": "Noah",
+                "username": "Noah",
                 "credential_type": Credential.CredentialType.PIN,
                 "pin": "2468",
             },
@@ -220,7 +220,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         user = User.objects.get(username="noah")
         self.assertRedirects(
             response,
-            f"{reverse('core:enroll')}?person_name=noah&credential_type={Credential.CredentialType.PIN}",
+            f"{reverse('core:enroll')}?username=noah&credential_type={Credential.CredentialType.PIN}",
         )
         self.assertTrue(
             Credential.objects.filter(
@@ -233,10 +233,10 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
     def test_enrollment_page_changes_by_credential_type(self):
         rfid_response = self.client.get(
-            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.RFID}"
+            f"{reverse('core:enroll')}?username=alice&credential_type={Credential.CredentialType.RFID}"
         )
         pin_response = self.client.get(
-            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.PIN}"
+            f"{reverse('core:enroll')}?username=alice&credential_type={Credential.CredentialType.PIN}"
         )
 
         self.assertContains(rfid_response, "Scan badge")
@@ -260,7 +260,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "capture-rfid",
-                "person_name": "alice",
+                "username": "alice",
                 "credential_type": Credential.CredentialType.RFID,
             },
         )
@@ -286,7 +286,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         response = self.client.post(
             reverse("core:access-start"),
             {
-                "user": self.user.id,
+                "username": "alice",
                 "resource": self.resource.id,
                 "tier": self.tier2_policy.tier,
             },
@@ -302,7 +302,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         response = self.client.post(
             reverse("core:access-start"),
             {
-                "user": self.user.id,
+                "username": "alice",
                 "resource": self.degraded_resource.id,
                 "tier": self.degraded_tier3_policy.tier,
             },
@@ -318,7 +318,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         response = self.client.post(
             reverse("core:access-start"),
             {
-                "user": self.user.id,
+                "username": "alice",
                 "resource": self.resource.id,
                 "tier": "tier-99",
             },
@@ -338,7 +338,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         response = self.client.post(
             reverse("core:access-start"),
-            {"user": self.user.id, "resource": self.resource.id, "tier": self.tier1_policy.tier},
+            {"username": "alice", "resource": self.resource.id, "tier": self.tier1_policy.tier},
         )
         session = AuthenticationSession.objects.get()
 
@@ -363,7 +363,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.client.post(
             reverse("core:access-start"),
             {
-                "user": self.user.id,
+                "username": "alice",
                 "resource": self.resource.id,
                 "tier": self.tier3_policy.tier,
                 "knowledge_factor": self.pin.identifier,
@@ -404,7 +404,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.client.post(
             reverse("core:access-start"),
             {
-                "user": self.user.id,
+                "username": "alice",
                 "resource": self.resource.id,
                 "tier": self.tier1_policy.tier,
             },

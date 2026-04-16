@@ -7,7 +7,7 @@
     <div>
         <div class="eyebrow">Access</div>
         <h1>Start access request</h1>
-        <p class="lead">Choose the person, resource, and tier.</p>
+        <p class="lead">Enter a subject username, resource, and tier.</p>
     </div>
 </section>
 
@@ -20,9 +20,9 @@
             {{ form.non_field_errors }}
             <div class="form-grid">
                 <div class="form-field">
-                    <label for="{{ form.user.id_for_label }}">{{ form.user.label }}</label>
-                    {{ form.user }}
-                    {{ form.user.errors }}
+                    <label for="{{ form.username.id_for_label }}">{{ form.username.label }}</label>
+                    {{ form.username }}
+                    {{ form.username.errors }}
                 </div>
                 <div class="form-field">
                     <label for="{{ form.resource.id_for_label }}">{{ form.resource.label }}</label>
