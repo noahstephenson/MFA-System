@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.http import Http404
 from django.shortcuts import redirect, render
+from django.utils.text import slugify
 from django.urls import reverse
 
 from .forms import AccessStartForm, CapturedCredentialForm, EnrollmentChooserForm, PinEnrollmentForm
@@ -124,14 +125,45 @@ def _selected_user_from_value(raw_user_id):
     return User.objects.filter(id=int(raw_user_id), is_active=True).first()
 
 
+def _normalize_person_name(raw_name):
+    return str(raw_name or "").strip()
+
+
+def _username_for_person_name(person_name):
+    username = slugify(person_name).replace("-", "_")
+    return username or person_name
+
+
+def _get_or_create_person(person_name):
+    normalized_name = _normalize_person_name(person_name)
+    if not normalized_name:
+        return None
+
+    username = _username_for_person_name(normalized_name)
+    user = User.objects.filter(username__iexact=username).first()
+    if user is None:
+        user = User.objects.create_user(username=username)
+    if not user.is_active:
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+    return user
+
+
+def _selected_person_name_from_request(request):
+    return _normalize_person_name(request.POST.get("person_name") or request.GET.get("person_name"))
+
+
 def _selected_user_from_request(request):
-    return _selected_user_from_value(request.POST.get("user", "")) or _selected_user_from_value(
-        request.GET.get("user", "")
-    )
+    person_name = _selected_person_name_from_request(request)
+    if person_name:
+        return _get_or_create_person(person_name)
+    return _selected_user_from_value(request.POST.get("user", "")) or _selected_user_from_value(request.GET.get("user", ""))
 
 
-def _initial_user_value(selected_user):
-    return {"user": selected_user.id} if selected_user is not None else {}
+def _initial_person_value(selected_user, person_name=""):
+    if person_name:
+        return {"person_name": person_name}
+    return {"person_name": selected_user.username} if selected_user is not None else {}
 
 
 def _selected_credential_type(request):
@@ -414,35 +446,37 @@ def access_result(request, session_id):
 
 
 def enroll(request):
+    selected_person_name = _selected_person_name_from_request(request)
     selected_user = _selected_user_from_request(request)
     selected_credential_type = _selected_credential_type(request)
     badge_capture = None
     fingerprint_capture = None
     chooser_initial = {
-        **_initial_user_value(selected_user),
+        **_initial_person_value(selected_user, selected_person_name),
         "credential_type": selected_credential_type,
     }
 
     chooser_form = EnrollmentChooserForm(initial=chooser_initial)
     if request.method == "POST":
         chooser_form = EnrollmentChooserForm(request.POST)
-        chooser_form.fields["user"].required = False
         chooser_form.fields["credential_type"].required = False
 
-    badge_save_form = CapturedCredentialForm(initial=_initial_user_value(selected_user))
-    fingerprint_save_form = CapturedCredentialForm(initial=_initial_user_value(selected_user))
-    pin_form = PinEnrollmentForm(initial=_initial_user_value(selected_user))
+    person_initial = _initial_person_value(selected_user, selected_person_name)
+    badge_save_form = CapturedCredentialForm(initial=person_initial)
+    fingerprint_save_form = CapturedCredentialForm(initial=person_initial)
+    pin_form = PinEnrollmentForm(initial=person_initial)
 
     if request.method == "POST":
         action = str(request.POST.get("action") or "").strip()
         if action and selected_user is None:
-            messages.warning(request, "Choose a person first.")
+            messages.warning(request, "Enter a person name first.")
         elif action == "save-pin":
             pin_form = PinEnrollmentForm(request.POST)
             if pin_form.is_valid():
                 try:
+                    user = _get_or_create_person(pin_form.cleaned_data["person_name"])
                     result = enroll_credential(
-                        user_id=pin_form.cleaned_data["user"].id,
+                        user_id=user.id,
                         credential_type=Credential.CredentialType.PIN,
                         identifier=pin_form.cleaned_data["pin"],
                         label=pin_form.cleaned_data.get("label", ""),
@@ -456,7 +490,7 @@ def enroll(request):
                         _credential_saved_message(result["credential"], created=result["created"]),
                     )
                     return redirect(
-                        f"{reverse('core:enroll')}?user={result['credential'].user_id}&credential_type={Credential.CredentialType.PIN}"
+                        f"{reverse('core:enroll')}?person_name={result['credential'].user.username}&credential_type={Credential.CredentialType.PIN}"
                     )
         elif action == "capture-rfid":
             try:
@@ -481,7 +515,7 @@ def enroll(request):
                 if capture_result["ok"]:
                     badge_save_form = CapturedCredentialForm(
                         initial={
-                            **_initial_user_value(selected_user),
+                            **_initial_person_value(selected_user, selected_person_name),
                             "captured_identifier": capture_result["identifier"],
                         }
                     )
@@ -489,8 +523,9 @@ def enroll(request):
             badge_save_form = CapturedCredentialForm(request.POST)
             if badge_save_form.is_valid():
                 try:
+                    user = _get_or_create_person(badge_save_form.cleaned_data["person_name"])
                     result = enroll_credential(
-                        user_id=badge_save_form.cleaned_data["user"].id,
+                        user_id=user.id,
                         credential_type=Credential.CredentialType.RFID,
                         identifier=badge_save_form.cleaned_data["captured_identifier"],
                         label=badge_save_form.cleaned_data.get("label", ""),
@@ -504,7 +539,7 @@ def enroll(request):
                         _credential_saved_message(result["credential"], created=result["created"]),
                     )
                     return redirect(
-                        f"{reverse('core:enroll')}?user={result['credential'].user_id}&credential_type={Credential.CredentialType.RFID}"
+                        f"{reverse('core:enroll')}?person_name={result['credential'].user.username}&credential_type={Credential.CredentialType.RFID}"
                     )
             else:
                 if not str(request.POST.get("captured_identifier") or "").strip():
@@ -536,7 +571,7 @@ def enroll(request):
                 if capture_result["ok"]:
                     fingerprint_save_form = CapturedCredentialForm(
                         initial={
-                            **_initial_user_value(selected_user),
+                            **_initial_person_value(selected_user, selected_person_name),
                             "captured_identifier": capture_result["identifier"],
                         }
                     )
@@ -544,8 +579,9 @@ def enroll(request):
             fingerprint_save_form = CapturedCredentialForm(request.POST)
             if fingerprint_save_form.is_valid():
                 try:
+                    user = _get_or_create_person(fingerprint_save_form.cleaned_data["person_name"])
                     result = enroll_credential(
-                        user_id=fingerprint_save_form.cleaned_data["user"].id,
+                        user_id=user.id,
                         credential_type=Credential.CredentialType.BIOMETRIC,
                         identifier=fingerprint_save_form.cleaned_data["captured_identifier"],
                         label=fingerprint_save_form.cleaned_data.get("label", ""),
@@ -559,7 +595,7 @@ def enroll(request):
                         _credential_saved_message(result["credential"], created=result["created"]),
                     )
                     return redirect(
-                        f"{reverse('core:enroll')}?user={result['credential'].user_id}&credential_type={Credential.CredentialType.BIOMETRIC}"
+                        f"{reverse('core:enroll')}?person_name={result['credential'].user.username}&credential_type={Credential.CredentialType.BIOMETRIC}"
                     )
             else:
                 if not str(request.POST.get("captured_identifier") or "").strip():

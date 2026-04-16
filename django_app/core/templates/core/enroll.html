@@ -15,9 +15,9 @@
     <form method="get" class="form-grid">
         <div class="action-grid">
             <div class="form-field">
-                <label for="{{ chooser_form.user.id_for_label }}">{{ chooser_form.user.label }}</label>
-                {{ chooser_form.user }}
-                {{ chooser_form.user.errors }}
+                <label for="{{ chooser_form.person_name.id_for_label }}">{{ chooser_form.person_name.label }}</label>
+                {{ chooser_form.person_name }}
+                {{ chooser_form.person_name.errors }}
             </div>
             <div class="form-field">
                 <label for="{{ chooser_form.credential_type.id_for_label }}">{{ chooser_form.credential_type.label }}</label>
@@ -45,7 +45,7 @@
             <form method="post" class="actions" style="margin-bottom: 1rem;">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="capture-rfid">
-                <input type="hidden" name="user" value="{{ selected_user.id }}">
+                <input type="hidden" name="person_name" value="{{ selected_user.username }}">
                 <input type="hidden" name="credential_type" value="rfid">
                 <button type="submit">Scan Badge</button>
             </form>
@@ -62,7 +62,7 @@
                     {% csrf_token %}
                     <input type="hidden" name="action" value="save-rfid">
                     <input type="hidden" name="credential_type" value="rfid">
-                    {{ badge_save_form.user }}
+                    {{ badge_save_form.person_name }}
                     {{ badge_save_form.captured_identifier }}
                     <button type="submit">Save Badge</button>
                 </form>
@@ -75,7 +75,7 @@
             <form method="post" class="actions" style="margin-bottom: 1rem;">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="capture-fingerprint">
-                <input type="hidden" name="user" value="{{ selected_user.id }}">
+                <input type="hidden" name="person_name" value="{{ selected_user.username }}">
                 <input type="hidden" name="credential_type" value="biometric">
                 <button type="submit">Capture Fingerprint</button>
             </form>
@@ -92,7 +92,7 @@
                     {% csrf_token %}
                     <input type="hidden" name="action" value="save-fingerprint">
                     <input type="hidden" name="credential_type" value="biometric">
-                    {{ fingerprint_save_form.user }}
+                    {{ fingerprint_save_form.person_name }}
                     {{ fingerprint_save_form.captured_identifier }}
                     <button type="submit">Save Fingerprint</button>
                 </form>
@@ -106,7 +106,7 @@
                 {% csrf_token %}
                 <input type="hidden" name="action" value="save-pin">
                 <input type="hidden" name="credential_type" value="pin">
-                {{ pin_form.user }}
+                {{ pin_form.person_name }}
                 {{ pin_form.non_field_errors }}
                 <div class="form-field">
                     <label for="{{ pin_form.pin.id_for_label }}">{{ pin_form.pin.label }}</label>

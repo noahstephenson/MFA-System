@@ -1,10 +1,13 @@
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
 from ..models import AuthenticationSession, Credential
 from .base import CoreTestDataMixin
+
+User = get_user_model()
 
 
 class OperatorPageTests(CoreTestDataMixin, TestCase):
@@ -68,7 +71,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
     def test_enrollment_page_renders_operator_actions_without_manual_hardware_fields(self):
         response = self.client.get(
-            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.RFID}"
+            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.RFID}"
         )
 
         self.assertEqual(response.status_code, 200)
@@ -96,7 +99,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "capture-rfid",
-                "user": self.user.id,
+                "person_name": "alice",
                 "credential_type": Credential.CredentialType.RFID,
             },
         )
@@ -111,7 +114,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "save-rfid",
-                "user": self.user.id,
+                "person_name": "alice",
                 "credential_type": Credential.CredentialType.RFID,
                 "captured_identifier": "CARD-2002",
             },
@@ -119,7 +122,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertRedirects(
             save_response,
-            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.RFID}",
+            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.RFID}",
         )
         self.assertTrue(
             Credential.objects.filter(
@@ -143,7 +146,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "capture-fingerprint",
-                "user": self.user.id,
+                "person_name": "alice",
                 "credential_type": Credential.CredentialType.BIOMETRIC,
             },
         )
@@ -158,7 +161,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "save-fingerprint",
-                "user": self.user.id,
+                "person_name": "alice",
                 "credential_type": Credential.CredentialType.BIOMETRIC,
                 "captured_identifier": "7",
             },
@@ -166,7 +169,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertRedirects(
             save_response,
-            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.BIOMETRIC}",
+            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.BIOMETRIC}",
         )
         self.assertTrue(
             Credential.objects.filter(
@@ -182,7 +185,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "save-pin",
-                "user": self.user.id,
+                "person_name": "alice",
                 "credential_type": Credential.CredentialType.PIN,
                 "pin": "1357",
                 "label": "Shift PIN",
@@ -191,7 +194,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertRedirects(
             response,
-            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.PIN}",
+            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.PIN}",
         )
         self.assertTrue(
             Credential.objects.filter(
@@ -203,12 +206,37 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             ).exists()
         )
 
+    def test_pin_enrollment_creates_typed_person(self):
+        response = self.client.post(
+            reverse("core:enroll"),
+            {
+                "action": "save-pin",
+                "person_name": "Noah",
+                "credential_type": Credential.CredentialType.PIN,
+                "pin": "2468",
+            },
+        )
+
+        user = User.objects.get(username="noah")
+        self.assertRedirects(
+            response,
+            f"{reverse('core:enroll')}?person_name=noah&credential_type={Credential.CredentialType.PIN}",
+        )
+        self.assertTrue(
+            Credential.objects.filter(
+                user=user,
+                credential_type=Credential.CredentialType.PIN,
+                identifier="2468",
+                active=True,
+            ).exists()
+        )
+
     def test_enrollment_page_changes_by_credential_type(self):
         rfid_response = self.client.get(
-            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.RFID}"
+            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.RFID}"
         )
         pin_response = self.client.get(
-            f"{reverse('core:enroll')}?user={self.user.id}&credential_type={Credential.CredentialType.PIN}"
+            f"{reverse('core:enroll')}?person_name=alice&credential_type={Credential.CredentialType.PIN}"
         )
 
         self.assertContains(rfid_response, "Scan badge")
@@ -232,7 +260,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             reverse("core:enroll"),
             {
                 "action": "capture-rfid",
-                "user": self.user.id,
+                "person_name": "alice",
                 "credential_type": Credential.CredentialType.RFID,
             },
         )
