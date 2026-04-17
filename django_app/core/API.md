@@ -21,7 +21,7 @@ Example request:
   "resource_id": 3,
   "user_id": 4,
   "tier": "elevated",
-  "knowledge_factor": "2468"
+  "knowledge_factor": "12345678"
 }
 ```
 

@@ -11,6 +11,8 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import AccessPolicy, normalize_access_tier, tier_requirement_definition
 from .services import run_node_red_access_attempt
 
+PIN_LENGTH = 8
+
 
 def _json_error(message, *, errors=None, http_status=400):
     return JsonResponse(
@@ -71,8 +73,12 @@ def _parse_knowledge_factor(data, field_name="knowledge_factor"):
 
 
 def _validate_knowledge_factor_for_tier(tier, knowledge_factor, field_name="knowledge_factor"):
-    if tier_requirement_definition(tier)["requires_knowledge_factor"] and not knowledge_factor:
+    if not tier_requirement_definition(tier)["requires_knowledge_factor"]:
+        return
+    if not knowledge_factor:
         raise ValidationError({field_name: ["This field is required for Tier 2 and Tier 3."]})
+    if not knowledge_factor.isdigit() or len(knowledge_factor) != PIN_LENGTH:
+        raise ValidationError({field_name: ["PIN must be exactly 8 digits."]})
 
 
 def _request_provenance(request):

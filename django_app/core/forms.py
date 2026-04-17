@@ -10,6 +10,16 @@ from .models import (
 )
 
 User = get_user_model()
+PIN_LENGTH = 8
+
+
+def validate_exact_pin(pin):
+    normalized_pin = str(pin or "").strip()
+    if not normalized_pin:
+        raise forms.ValidationError("Enter a PIN.")
+    if not normalized_pin.isdigit() or len(normalized_pin) != PIN_LENGTH:
+        raise forms.ValidationError("PIN must be exactly 8 digits.")
+    return normalized_pin
 
 
 class AccessStartForm(forms.Form):
@@ -69,11 +79,11 @@ class AccessStartForm(forms.Form):
         cleaned_data = super().clean()
         tier = cleaned_data.get("tier")
         knowledge_factor = str(cleaned_data.get("knowledge_factor") or "").strip()
-        if tier_requirement_definition(tier)["requires_knowledge_factor"] and not knowledge_factor:
-            self.add_error(
-                "knowledge_factor",
-                "Enter the PIN for Tier 2 and Tier 3.",
-            )
+        if tier_requirement_definition(tier)["requires_knowledge_factor"]:
+            try:
+                cleaned_data["knowledge_factor"] = validate_exact_pin(knowledge_factor)
+            except forms.ValidationError as exc:
+                self.add_error("knowledge_factor", exc)
         return cleaned_data
 
 
@@ -180,7 +190,4 @@ class PinEnrollmentForm(forms.Form):
         return username
 
     def clean_pin(self):
-        pin = str(self.cleaned_data.get("pin") or "").strip()
-        if not pin:
-            raise forms.ValidationError("Enter a PIN.")
-        return pin
+        return validate_exact_pin(self.cleaned_data.get("pin"))

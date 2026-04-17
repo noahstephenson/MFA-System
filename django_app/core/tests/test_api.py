@@ -158,6 +158,25 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
             self.assertFalse(payload["ok"])
             self.assertIn("knowledge_factor", payload["errors"])
 
+    def test_api_access_start_requires_exactly_eight_digit_pin(self):
+        response = self.client.post(
+            reverse("core:api-access-start"),
+            data=json.dumps(
+                {
+                    "resource_id": self.resource.id,
+                    "user_id": self.user.id,
+                    "tier": self.tier2_policy.tier,
+                    "knowledge_factor": "1234567A",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        payload = response.json()
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["errors"]["knowledge_factor"], ["PIN must be exactly 8 digits."])
+
     def test_api_access_start_rejects_invalid_json(self):
         response = self.client.post(
             reverse("core:api-access-start"),
@@ -346,7 +365,7 @@ class AccessAPITests(CoreTestDataMixin, TestCase):
                     "resource_id": self.resource.id,
                     "user_id": self.user.id,
                     "tier": self.tier2_policy.tier,
-                    "knowledge_factor": "9999",
+                    "knowledge_factor": "99999999",
                 }
             ),
             content_type="application/json",

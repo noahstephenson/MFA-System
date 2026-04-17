@@ -63,11 +63,11 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "MFA Demo")
-        self.assertContains(response, "Enroll Credentials")
-        self.assertContains(response, "Start Access Request")
+        self.assertContains(response, "Enroll")
+        self.assertContains(response, "Access")
 
         content = response.content.decode("utf-8")
-        self.assertLess(content.index("Enroll Credentials"), content.index("Start Access Request"))
+        self.assertLess(content.index("Enroll"), content.index("Access"))
 
     def test_enrollment_page_renders_operator_actions_without_manual_hardware_fields(self):
         response = self.client.get(
@@ -187,7 +187,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
                 "action": "save-pin",
                 "username": "alice",
                 "credential_type": Credential.CredentialType.PIN,
-                "pin": "1357",
+                "pin": "87654321",
                 "label": "Shift PIN",
             },
         )
@@ -200,7 +200,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             Credential.objects.filter(
                 user=self.user,
                 credential_type=Credential.CredentialType.PIN,
-                identifier="1357",
+                identifier="87654321",
                 label="Shift PIN",
                 active=True,
             ).exists()
@@ -213,7 +213,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
                 "action": "save-pin",
                 "username": "Noah",
                 "credential_type": Credential.CredentialType.PIN,
-                "pin": "2468",
+                "pin": "12345678",
             },
         )
 
@@ -226,8 +226,29 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
             Credential.objects.filter(
                 user=user,
                 credential_type=Credential.CredentialType.PIN,
-                identifier="2468",
+                identifier="12345678",
                 active=True,
+            ).exists()
+        )
+
+    def test_pin_enrollment_requires_exactly_eight_digits(self):
+        response = self.client.post(
+            reverse("core:enroll"),
+            {
+                "action": "save-pin",
+                "username": "alice",
+                "credential_type": Credential.CredentialType.PIN,
+                "pin": "1234",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "PIN must be exactly 8 digits.")
+        self.assertFalse(
+            Credential.objects.filter(
+                user=self.user,
+                credential_type=Credential.CredentialType.PIN,
+                identifier="1234",
             ).exists()
         )
 
@@ -295,7 +316,22 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Tier 2: Badge + PIN")
         self.assertContains(response, "Not Required")
-        self.assertContains(response, "Enter the PIN for Tier 2 and Tier 3.")
+        self.assertContains(response, "Enter a PIN.")
+        self.assertEqual(AuthenticationSession.objects.count(), 0)
+
+    def test_access_start_requires_exactly_eight_digit_pin_for_tier2(self):
+        response = self.client.post(
+            reverse("core:access-start"),
+            {
+                "username": "alice",
+                "resource": self.resource.id,
+                "tier": self.tier2_policy.tier,
+                "knowledge_factor": "1234567A",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "PIN must be exactly 8 digits.")
         self.assertEqual(AuthenticationSession.objects.count(), 0)
 
     def test_access_start_page_shows_tier3_factor_states(self):
@@ -418,6 +454,6 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         self.assertContains(result_response, "Fingerprint service timed out.")
 
     def test_access_result_unknown_session_returns_404(self):
-        response = self.client.get(reverse("core:access-result", args=[9999]))
+        response = self.client.get(reverse("core:access-result", args=[99999999]))
 
         self.assertEqual(response.status_code, 404)

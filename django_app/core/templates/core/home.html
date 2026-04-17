@@ -5,22 +5,59 @@
 {% block content %}
 <section class="panel page-header">
     <div>
-        <div class="eyebrow">Operator workflow</div>
-        <h1>Choose the next step</h1>
-        <p class="lead">Enroll credentials first, then start an access request.</p>
+        <div class="eyebrow">MFA System</div>
+        <h1>Multi-Factor Authentication Demo</h1>
+        <p class="lead">A Raspberry Pi prototype for tiered physical access control using RFID, fingerprint, and PIN authentication.</p>
     </div>
 </section>
 
-<div class="action-grid">
-    <a class="feature-card" href="{% url 'core:enroll' %}">
-        <div class="eyebrow">Step 1</div>
-        <h2>Enroll Credentials</h2>
-        <p class="muted">Scan a badge, capture a fingerprint, or save a PIN.</p>
-    </a>
-    <a class="feature-card" href="{% url 'core:access-start' %}">
-        <div class="eyebrow">Step 2</div>
-        <h2>Start Access Request</h2>
-        <p class="muted">Enter the subject username, resource, and tier, then run the check.</p>
-    </a>
+<div class="panel">
+    <div class="eyebrow">Overview</div>
+    <h2>How it works</h2>
+    <p>Users must satisfy a set of authentication factors before gaining access to a protected resource. The required factors depend on the access tier assigned to that resource. Each attempt is logged as an audit event.</p>
+</div>
+
+<div class="panel">
+    <div class="eyebrow">Access Tiers</div>
+    <h2>Tier Requirements</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Tier</th>
+                <th>Label</th>
+                <th>Required Factors</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Tier 1</td>
+                <td>Basic</td>
+                <td>RFID badge + Fingerprint</td>
+                <td>Highest-complexity normal mode</td>
+            </tr>
+            <tr>
+                <td>Tier 2</td>
+                <td>Elevated</td>
+                <td>RFID badge + PIN</td>
+                <td>Simplified normal mode</td>
+            </tr>
+            <tr>
+                <td>Tier 3</td>
+                <td>High</td>
+                <td>RFID badge + PIN</td>
+                <td>Degraded mission-continuity; restricted to pre-approved resources only</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="panel">
+    <div class="eyebrow">Workflow</div>
+    <h2>Steps</h2>
+    <ul style="margin: 0; padding-left: 1.25rem; line-height: 2;">
+        <li><strong>Enroll</strong> — Register a user's RFID badge, fingerprint, or PIN against their account.</li>
+        <li><strong>Access</strong> — Submit an access request for a subject, resource, and tier. The system evaluates enrolled credentials and returns an approved or denied decision.</li>
+    </ul>
 </div>
 {% endblock content %}

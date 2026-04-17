@@ -182,7 +182,7 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
     @patch("core.services.node_red_client.collect_factors")
     def test_tier1_denies_on_wrong_rfid(self, mock_collect):
         mock_collect.return_value = self._node_red_result(
-            rfid=self._rfid_ok(identifier="CARD-9999"),
+            rfid=self._rfid_ok(identifier="CARD-99999999"),
             fingerprint=self._fingerprint_ok(),
         )
 
@@ -316,7 +316,7 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
             resource_id=self.resource.id,
             user_id=self.user.id,
             tier=self.tier2_policy.tier,
-            knowledge_factor="9999",
+            knowledge_factor="99999999",
         )
 
         session = result["session"]
@@ -478,7 +478,7 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
             resource_id=self.degraded_resource.id,
             user_id=self.user.id,
             tier=self.degraded_tier3_policy.tier,
-            knowledge_factor="9999",
+            knowledge_factor="99999999",
         )
 
         session = result["session"]
@@ -588,7 +588,7 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
     def test_start_authentication_session_rejects_invalid_user_resource_and_tier(self):
         with self.assertRaises(ValidationError):
             start_authentication_session(
-                resource_id=9999,
+                resource_id=99999999,
                 user_id=self.user.id,
                 tier=self.tier1_policy.tier,
             )
@@ -596,7 +596,7 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
         with self.assertRaises(ValidationError):
             start_authentication_session(
                 resource_id=self.resource.id,
-                user_id=9999,
+                user_id=99999999,
                 tier=self.tier1_policy.tier,
             )
 

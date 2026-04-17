@@ -61,7 +61,7 @@ class CoreTestDataMixin:
         self.pin = Credential.objects.create(
             user=self.user,
             credential_type=Credential.CredentialType.PIN,
-            identifier="2468",
+            identifier="12345678",
             label="Alice PIN",
         )
         self.biometric = Credential.objects.create(

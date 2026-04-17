@@ -213,11 +213,11 @@ class CoreModelTests(CoreTestDataMixin, TestCase):
             details={
                 "accepted_factor_keys": [
                     "rfid:CARD-1001",
-                    "pin:2468",
+                    "pin:12345678",
                 ],
                 "submitted_factors": [
                     {"credential_type": "rfid", "identifier": "CARD-1001", "matched": True},
-                    {"credential_type": "pin", "identifier": "2468", "matched": True},
+                    {"credential_type": "pin", "identifier": "12345678", "matched": True},
                 ],
             },
         )
@@ -240,11 +240,11 @@ class CoreModelTests(CoreTestDataMixin, TestCase):
             details={
                 "accepted_factor_keys": [
                     "rfid:CARD-1001",
-                    "pin:2468",
+                    "pin:12345678",
                 ],
                 "submitted_factors": [
                     {"credential_type": "rfid", "identifier": "CARD-1001", "matched": True},
-                    {"credential_type": "pin", "identifier": "2468", "matched": True},
+                    {"credential_type": "pin", "identifier": "12345678", "matched": True},
                 ],
             },
         )
