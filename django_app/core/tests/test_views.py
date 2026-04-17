@@ -309,7 +309,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Tier 3: Badge + PIN + approved degraded resource")
+        self.assertContains(response, "Tier 3: Badge + PIN (degraded access to approved functions only)")
         self.assertContains(response, "PIN")
         self.assertContains(response, "Not Required")
         self.assertEqual(AuthenticationSession.objects.count(), 0)

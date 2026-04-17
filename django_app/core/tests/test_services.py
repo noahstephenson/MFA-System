@@ -421,7 +421,7 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
         )
 
     @patch("core.services.node_red_client.collect_factors")
-    def test_tier3_success_requires_rfid_knowledge_and_degraded_approved_resource(self, mock_collect):
+    def test_tier3_grants_degraded_access_when_rfid_and_knowledge_succeed_and_resource_is_approved(self, mock_collect):
         mock_collect.return_value = self._node_red_result(
             ok=False,
             error="not_matched",

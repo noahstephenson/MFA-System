@@ -64,7 +64,7 @@ def _tier_note(selected_tier):
     notes = {
         AccessPolicy.Tier.BASIC: "Tier 1: Badge + Fingerprint",
         AccessPolicy.Tier.ELEVATED: "Tier 2: Badge + PIN",
-        AccessPolicy.Tier.HIGH: "Tier 3: Badge + PIN + approved degraded resource",
+        AccessPolicy.Tier.HIGH: "Tier 3: Badge + PIN (degraded access to approved functions only)",
     }
     return notes.get(selected_tier, "Select a tier to see the required factors.")
 
