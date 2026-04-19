@@ -385,7 +385,7 @@ def _evaluate_authorization(session, authentication_result):
     if requires_degraded_access:
         message = "Tier 3 degraded access is approved for the selected resource."
     else:
-        message = "Authorization granted for the selected resource."
+        message = "Standard protected access authorized for the selected resource."
 
     return {
         "ok": True,
@@ -438,6 +438,7 @@ def _finalize_session(session, factor_result, *, knowledge_factor="", request_pr
         "message": authentication_result["message"],
     }
     details["authorization_result"] = authorization_result
+    details["access_mode"] = "degraded" if authorization_result["degraded_access_required"] else "standard"
     details["result_message"] = _final_result_message(authentication_result, authorization_result)
 
     session.current_step = len(authentication_result["verified_factor_types"])
@@ -465,8 +466,19 @@ def _finalize_session(session, factor_result, *, knowledge_factor="", request_pr
         ]
     )
 
+    is_degraded = details["access_mode"] == "degraded"
+
+    def _audit(event_type, message, **kwargs):
+        if is_degraded:
+            try:
+                create_audit_event(event_type, message, **kwargs)
+            except Exception:
+                pass
+        else:
+            create_audit_event(event_type, message, **kwargs)
+
     factor_event_type, factor_event_severity, factor_event_message = _node_red_collection_event(factor_result)
-    create_audit_event(
+    _audit(
         factor_event_type,
         factor_event_message,
         session=session,
@@ -481,7 +493,7 @@ def _finalize_session(session, factor_result, *, knowledge_factor="", request_pr
         ),
     )
 
-    create_audit_event(
+    _audit(
         "authentication_succeeded" if authentication_result["ok"] else "authentication_failed",
         authentication_result["message"],
         session=session,
@@ -496,7 +508,7 @@ def _finalize_session(session, factor_result, *, knowledge_factor="", request_pr
         ),
     )
 
-    create_audit_event(
+    _audit(
         "authorization_granted" if authorization_result["ok"] else "authorization_denied",
         authorization_result["message"],
         session=session,
@@ -511,7 +523,7 @@ def _finalize_session(session, factor_result, *, knowledge_factor="", request_pr
         ),
     )
 
-    create_audit_event(
+    _audit(
         "access_granted" if access_granted else "access_denied",
         details["result_message"],
         session=session,

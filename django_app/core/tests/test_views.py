@@ -314,7 +314,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Tier 2: Badge + PIN")
+        self.assertContains(response, "Tier 2: Badge + PIN (standard protected access)")
         self.assertContains(response, "Not Required")
         self.assertContains(response, "Enter a PIN.")
         self.assertEqual(AuthenticationSession.objects.count(), 0)
@@ -380,11 +380,32 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
 
         self.assertRedirects(response, reverse("core:access-result", args=[session.id]))
         result_response = self.client.get(reverse("core:access-result", args=[session.id]))
-        self.assertContains(result_response, "Access granted")
+        self.assertContains(result_response, "Standard protected access granted")
         self.assertContains(result_response, "Factor results")
         self.assertContains(result_response, "Accepted")
         self.assertContains(result_response, "ID 4")
         self.assertContains(result_response, "Not Required")
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_tier2_result_page_shows_standard_protected_access_wording(self, mock_collect):
+        mock_collect.return_value = self._node_red_result(
+            rfid=self._rfid_ok(),
+            fingerprint=self._fingerprint_fail(),
+        )
+
+        self.client.post(
+            reverse("core:access-start"),
+            {
+                "username": "alice",
+                "resource": self.resource.id,
+                "tier": self.tier2_policy.tier,
+                "knowledge_factor": self.pin.identifier,
+            },
+        )
+        session = AuthenticationSession.objects.get()
+
+        result_response = self.client.get(reverse("core:access-result", args=[session.id]))
+        self.assertContains(result_response, "Standard protected access granted")
 
     @patch("core.services.node_red_client.collect_factors")
     def test_tier3_denial_result_page_is_understandable(self, mock_collect):
@@ -408,7 +429,7 @@ class OperatorPageTests(CoreTestDataMixin, TestCase):
         session = AuthenticationSession.objects.get()
 
         result_response = self.client.get(reverse("core:access-result", args=[session.id]))
-        self.assertContains(result_response, "Access denied")
+        self.assertContains(result_response, "Degraded access denied")
         self.assertContains(result_response, "Resource check")
         self.assertContains(result_response, "Resource is not approved for Tier 3 access.")
         self.assertContains(result_response, "Fingerprint")

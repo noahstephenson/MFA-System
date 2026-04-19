@@ -63,7 +63,7 @@ def _selected_tier_from_form(form):
 def _tier_note(selected_tier):
     notes = {
         AccessPolicy.Tier.BASIC: "Tier 1: Badge + Fingerprint",
-        AccessPolicy.Tier.ELEVATED: "Tier 2: Badge + PIN",
+        AccessPolicy.Tier.ELEVATED: "Tier 2: Badge + PIN (standard protected access)",
         AccessPolicy.Tier.HIGH: "Tier 3: Badge + PIN (degraded access to approved functions only)",
     }
     return notes.get(selected_tier, "Select a tier to see the required factors.")
@@ -80,6 +80,7 @@ def _operator_message(message):
         "Authentication failed.": "Identity check failed.",
         "Authorization denied because authentication failed.": "Access stopped because identity check failed.",
         "Authorization granted for the selected resource.": "Resource approved.",
+        "Standard protected access authorized for the selected resource.": "Access authorized for this resource.",
         "Tier 3 degraded access is approved for the selected resource.": "Resource approved for Tier 3 access.",
         "Selected resource is not approved for Tier 3 degraded access.": "Resource is not approved for Tier 3 access.",
         "Knowledge factor is required for this tier.": "PIN is required for this tier.",

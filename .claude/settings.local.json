@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python manage.py test core)",
+      "Bash(DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost python manage.py runserver 0.0.0.0:8000)",
+      "Bash(netstat -ano)",
+      "Bash(wmic process *)",
+      "Bash(powershell.exe *)",
+      "Bash(python -m pytest django_app/core/tests/ -v)",
+      "Bash(python manage.py test core.tests --verbosity=2)",
+      "Bash(git add *)"
+    ]
+  }
+}

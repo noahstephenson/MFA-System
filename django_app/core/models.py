@@ -115,6 +115,10 @@ def normalize_access_tier(value):
     return aliases.get(normalized, "")
 
 
+# Tier 1: highest-complexity normal — possession + inherence (RFID + fingerprint)
+# Tier 2: standard protected access — possession + knowledge (RFID + PIN)
+# Tier 3: degraded mission-continuity — possession + knowledge, restricted to
+#          resources pre-approved for degraded operation (requires_degraded_access=True)
 def tier_requirement_definition(tier):
     normalized_tier = normalize_access_tier(tier)
     return {

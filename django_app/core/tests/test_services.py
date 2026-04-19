@@ -554,6 +554,64 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
         self.assertIn("factor_collection_result", details)
 
     @patch("core.services.node_red_client.collect_factors")
+    def test_access_mode_is_standard_for_tier2(self, mock_collect):
+        mock_collect.return_value = self._node_red_result(
+            rfid=self._rfid_ok(),
+            fingerprint=self._fingerprint_fail(),
+        )
+
+        result = run_node_red_access_attempt(
+            resource_id=self.resource.id,
+            user_id=self.user.id,
+            tier=self.tier2_policy.tier,
+            knowledge_factor=self.pin.identifier,
+        )
+
+        self.assertEqual(result["session"].details["access_mode"], "standard")
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_access_mode_is_degraded_for_tier3(self, mock_collect):
+        mock_collect.return_value = self._node_red_result(
+            rfid=self._rfid_ok(),
+            fingerprint=self._fingerprint_fail(),
+        )
+
+        result = run_node_red_access_attempt(
+            resource_id=self.degraded_resource.id,
+            user_id=self.user.id,
+            tier=self.degraded_tier3_policy.tier,
+            knowledge_factor=self.pin.identifier,
+        )
+
+        self.assertEqual(result["session"].details["access_mode"], "degraded")
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_tier3_audit_failure_does_not_block_access(self, mock_collect):
+        mock_collect.return_value = self._node_red_result(
+            rfid=self._rfid_ok(),
+            fingerprint=self._fingerprint_fail(),
+        )
+
+        with patch("core.services.create_audit_event") as mock_audit:
+            mock_audit.side_effect = [
+                None,                            # session_started succeeds
+                Exception("audit unavailable"),  # factor_collection_completed
+                Exception("audit unavailable"),  # authentication_succeeded
+                Exception("audit unavailable"),  # authorization_granted
+                Exception("audit unavailable"),  # access_granted
+            ]
+            result = run_node_red_access_attempt(
+                resource_id=self.degraded_resource.id,
+                user_id=self.user.id,
+                tier=self.degraded_tier3_policy.tier,
+                knowledge_factor=self.pin.identifier,
+            )
+
+        session = result["session"]
+        self.assertTrue(session.is_access_granted)
+        self.assertEqual(session.status, AuthenticationSession.Status.APPROVED)
+
+    @patch("core.services.node_red_client.collect_factors")
     def test_audit_events_capture_auth_and_authorization_outcomes(self, mock_collect):
         mock_collect.return_value = self._node_red_result(
             ok=False,

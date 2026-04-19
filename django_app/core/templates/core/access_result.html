@@ -6,7 +6,13 @@
 <section class="panel page-header">
     <div>
         <div class="eyebrow">Result</div>
-        <h1>{% if session.is_access_granted %}Access granted{% else %}Access denied{% endif %}</h1>
+        <h1>
+            {% if authorization_result.degraded_access_required %}
+                {% if session.is_access_granted %}Degraded access granted{% else %}Degraded access denied{% endif %}
+            {% else %}
+                {% if session.is_access_granted %}Standard protected access granted{% else %}Standard protected access denied{% endif %}
+            {% endif %}
+        </h1>
         <p class="lead">{{ result_message }}</p>
     </div>
     <div class="actions">
@@ -52,7 +58,7 @@
             </li>
             {% if authorization_result.degraded_access_required %}
                 <li>
-                    <span class="detail-label">Tier 3 approval</span>
+                    <span class="detail-label">Degraded access approval</span>
                     {% if authorization_result.resource_allows_degraded_access %}Approved{% else %}Not approved{% endif %}
                 </li>
             {% endif %}

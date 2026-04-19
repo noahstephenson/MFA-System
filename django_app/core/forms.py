@@ -38,7 +38,11 @@ class AccessStartForm(forms.Form):
         label="Resource",
     )
     tier = forms.ChoiceField(
-        choices=AccessPolicy.Tier.choices,
+        choices=[
+            (AccessPolicy.Tier.BASIC, "Tier 1 — Highest-Complexity Normal (Badge + Fingerprint)"),
+            (AccessPolicy.Tier.ELEVATED, "Tier 2 — Standard Protected Access (Badge + PIN)"),
+            (AccessPolicy.Tier.HIGH, "Tier 3 — Degraded / Mission Continuity Access (Badge + PIN)"),
+        ],
         label="Tier",
     )
     knowledge_factor = forms.CharField(
