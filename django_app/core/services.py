@@ -466,10 +466,10 @@ def _finalize_session(session, factor_result, *, knowledge_factor="", request_pr
         ]
     )
 
-    is_degraded = details["access_mode"] == "degraded"
+    audit_mode = tier_requirement_definition(_selected_tier(session))["audit_mode"]
 
     def _audit(event_type, message, **kwargs):
-        if is_degraded:
+        if audit_mode == "best_effort":
             try:
                 create_audit_event(event_type, message, **kwargs)
             except Exception:

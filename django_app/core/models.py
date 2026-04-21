@@ -129,6 +129,7 @@ def tier_requirement_definition(tier):
             ],
             "requires_knowledge_factor": False,
             "requires_degraded_access": False,
+            "audit_mode": "strict",
         },
         AccessPolicy.Tier.ELEVATED: {
             "required_factor_types": [
@@ -137,6 +138,7 @@ def tier_requirement_definition(tier):
             ],
             "requires_knowledge_factor": True,
             "requires_degraded_access": False,
+            "audit_mode": "strict",
         },
         AccessPolicy.Tier.HIGH: {
             "required_factor_types": [
@@ -145,6 +147,7 @@ def tier_requirement_definition(tier):
             ],
             "requires_knowledge_factor": True,
             "requires_degraded_access": True,
+            "audit_mode": "best_effort",
         },
     }.get(
         normalized_tier,
@@ -152,6 +155,7 @@ def tier_requirement_definition(tier):
             "required_factor_types": [],
             "requires_knowledge_factor": False,
             "requires_degraded_access": False,
+            "audit_mode": "strict",
         },
     )
 
