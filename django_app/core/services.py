@@ -611,6 +611,80 @@ def enroll_credential(
     }
 
 
+@transaction.atomic
+def enroll_resource(
+    *,
+    resource_name,
+    tier,
+    description="",
+    allow_degraded_access=False,
+    request_provenance=None,
+):
+    normalized_name = str(resource_name or "").strip()
+    if not normalized_name:
+        raise _validation_error("Enter a resource name.", field="resource_name")
+
+    normalized_tier = normalize_access_tier(tier)
+    if not normalized_tier:
+        raise _validation_error("Select a valid tier.", field="tier")
+
+    resource = ProtectedResource.objects.filter(name__iexact=normalized_name).first()
+    resource_created = resource is None
+    if resource_created:
+        resource = ProtectedResource.objects.create(
+            name=normalized_name,
+            description=str(description or "").strip(),
+            allow_degraded_access=bool(allow_degraded_access),
+            active=True,
+        )
+    else:
+        updated_fields = []
+        new_description = str(description or "").strip()
+        if new_description and resource.description != new_description:
+            resource.description = new_description
+            updated_fields.append("description")
+        if resource.allow_degraded_access != bool(allow_degraded_access):
+            resource.allow_degraded_access = bool(allow_degraded_access)
+            updated_fields.append("allow_degraded_access")
+        if updated_fields:
+            resource.save(update_fields=[*updated_fields, "updated_at"])
+
+    tier_label = dict(AccessPolicy.Tier.choices).get(normalized_tier, normalized_tier)
+    policy_name = f"{tier_label} Policy"
+    policy, policy_created = AccessPolicy.objects.get_or_create(
+        resource=resource,
+        tier=normalized_tier,
+        defaults={"name": policy_name, "active": True},
+    )
+
+    event_type = "resource_enrolled" if resource_created else "resource_updated"
+    message = (
+        f"Resource '{resource.name}' enrolled with {tier_label} policy."
+        if resource_created
+        else f"Resource '{resource.name}' updated with {tier_label} policy."
+    )
+    create_audit_event(
+        event_type,
+        message,
+        details=_merge_request_provenance(
+            {
+                "resource_id": resource.id,
+                "resource_name": resource.name,
+                "policy_id": policy.id,
+                "tier": normalized_tier,
+            },
+            request_provenance,
+        ),
+    )
+
+    return {
+        "resource": resource,
+        "policy": policy,
+        "created": resource_created,
+        "message": message,
+    }
+
+
 def capture_enrollment_identifier(
     *,
     user_id,

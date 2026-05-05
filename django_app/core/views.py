@@ -6,11 +6,12 @@ from django.shortcuts import redirect, render
 from django.utils.text import slugify
 from django.urls import reverse
 
-from .forms import AccessStartForm, CapturedCredentialForm, EnrollmentChooserForm, PinEnrollmentForm
+from .forms import AccessStartForm, CapturedCredentialForm, EnrollmentChooserForm, PinEnrollmentForm, ResourceEnrollmentForm
 from .models import AccessPolicy, Credential, normalize_access_tier, tier_requirement_definition
 from .services import (
     capture_enrollment_identifier,
     enroll_credential,
+    enroll_resource,
     get_authentication_session,
     run_node_red_access_attempt,
 )
@@ -466,6 +467,7 @@ def enroll(request):
     badge_save_form = CapturedCredentialForm(initial=username_initial)
     fingerprint_save_form = CapturedCredentialForm(initial=username_initial)
     pin_form = PinEnrollmentForm(initial=username_initial)
+    resource_form = ResourceEnrollmentForm()
 
     if request.method == "POST":
         action = str(request.POST.get("action") or "").strip()
@@ -605,6 +607,24 @@ def enroll(request):
                 Credential.CredentialType.BIOMETRIC,
                 identifier=request.POST.get("captured_identifier", ""),
             )
+        elif action == "save-resource":
+            resource_form = ResourceEnrollmentForm(request.POST)
+            if resource_form.is_valid():
+                try:
+                    result = enroll_resource(
+                        resource_name=resource_form.cleaned_data["resource_name"],
+                        tier=resource_form.cleaned_data["tier"],
+                        description=resource_form.cleaned_data.get("description", ""),
+                        allow_degraded_access=resource_form.cleaned_data.get("allow_degraded_access", False),
+                        request_provenance=_request_provenance(request, channel="html"),
+                    )
+                except ValidationError as exc:
+                    _add_form_errors(resource_form, exc)
+                else:
+                    messages.success(request, result["message"])
+                    return redirect(
+                        f"{reverse('core:enroll')}?resource_name={result['resource'].name}"
+                    )
 
     return render(
         request,
@@ -617,6 +637,7 @@ def enroll(request):
             "fingerprint_save_form": fingerprint_save_form,
             "nav_key": "enroll",
             "pin_form": pin_form,
+            "resource_form": resource_form,
             "selected_credential_type": selected_credential_type,
             "selected_user": selected_user,
         },

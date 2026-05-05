@@ -195,3 +195,41 @@ class PinEnrollmentForm(forms.Form):
 
     def clean_pin(self):
         return validate_exact_pin(self.cleaned_data.get("pin"))
+
+
+class ResourceEnrollmentForm(forms.Form):
+    resource_name = forms.CharField(
+        label="Resource Name",
+        strip=True,
+        widget=forms.TextInput(attrs={"placeholder": "Enter resource name"}),
+    )
+    description = forms.CharField(
+        label="Description",
+        required=False,
+        strip=True,
+        widget=forms.TextInput(attrs={"placeholder": "Optional description"}),
+    )
+    allow_degraded_access = forms.BooleanField(
+        label="Allow Tier 3 (Degraded) Access",
+        required=False,
+    )
+    tier = forms.ChoiceField(
+        label="Authentication Tier",
+        choices=[
+            (AccessPolicy.Tier.BASIC, "Tier 1 — Badge + Fingerprint"),
+            (AccessPolicy.Tier.ELEVATED, "Tier 2 — Badge + PIN"),
+            (AccessPolicy.Tier.HIGH, "Tier 3 — Badge + PIN (degraded, resource must allow it)"),
+        ],
+    )
+
+    def clean_resource_name(self):
+        name = str(self.cleaned_data.get("resource_name") or "").strip()
+        if not name:
+            raise forms.ValidationError("Enter a resource name.")
+        return name
+
+    def clean_tier(self):
+        tier = normalize_access_tier(self.cleaned_data.get("tier"))
+        if not tier:
+            raise forms.ValidationError("Select a valid tier.")
+        return tier

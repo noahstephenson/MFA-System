@@ -31,6 +31,45 @@
     </form>
 </section>
 
+<section class="panel">
+    <div class="eyebrow">Protected Resource</div>
+    <h2>Enroll Resource</h2>
+    <p>Create or update a protected resource and assign an authentication tier.</p>
+
+    <form method="post" class="form-grid">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save-resource">
+        {{ resource_form.non_field_errors }}
+        <div class="action-grid">
+            <div class="form-field">
+                <label for="{{ resource_form.resource_name.id_for_label }}">{{ resource_form.resource_name.label }}</label>
+                {{ resource_form.resource_name }}
+                {{ resource_form.resource_name.errors }}
+            </div>
+            <div class="form-field">
+                <label for="{{ resource_form.description.id_for_label }}">{{ resource_form.description.label }}</label>
+                {{ resource_form.description }}
+                {{ resource_form.description.errors }}
+            </div>
+        </div>
+        <div class="form-field">
+            <label>{{ resource_form.tier.label }}</label>
+            {{ resource_form.tier }}
+            {{ resource_form.tier.errors }}
+        </div>
+        <div class="form-field">
+            <label>
+                {{ resource_form.allow_degraded_access }}
+                {{ resource_form.allow_degraded_access.label }}
+            </label>
+            {{ resource_form.allow_degraded_access.errors }}
+        </div>
+        <div class="actions">
+            <button type="submit">Save Resource</button>
+        </div>
+    </form>
+</section>
+
 {% if selected_user %}
     <section class="panel compact">
         <div class="eyebrow">Current subject</div>
