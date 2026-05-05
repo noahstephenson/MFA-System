@@ -100,7 +100,7 @@ This creates a local SQLite database at `django_app/db.sqlite3`. No external dat
 npm install -g --unsafe-perm node-red
 ```
 
-Start Node-RED:
+Start Node-RED in a separate terminal (it runs in the foreground):
 
 ```bash
 node-red
@@ -131,6 +131,7 @@ The flow exposes these HTTP endpoints that Django calls:
 From the `django_app/` directory (with your virtual environment active):
 
 ```bash
+cd django_app
 DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,raspberrypi,<PI_IP> python manage.py runserver 0.0.0.0:8000
 ```
 
