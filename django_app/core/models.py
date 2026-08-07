@@ -4,11 +4,33 @@ from django.core.validators import MinValueValidator
 from django.db import models
 
 
+# ProtectedResource.minimum_tier needs AccessPolicy.Tier's choices/default, but
+# AccessPolicy is defined further down this file. These two module-level
+# functions defer that lookup until Django actually needs the value (field
+# instantiation happens immediately below, but the function *bodies* aren't
+# evaluated until called, by which point AccessPolicy exists) — and, unlike a
+# lambda, a named function is serializable into migrations.
+def _minimum_tier_choices():
+    return AccessPolicy.Tier.choices
+
+
+def _default_minimum_tier():
+    return AccessPolicy.Tier.HIGH
+
+
 class ProtectedResource(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
     active = models.BooleanField(default=True)
     allow_degraded_access = models.BooleanField(default=False)
+    # Minimum assurance a requested tier must meet to reach this resource, per
+    # TIER_ASSURANCE_RANK below. Defaults to the lowest-assurance tier (Tier 3 /
+    # HIGH) so existing resources keep today's behavior unless raised deliberately.
+    minimum_tier = models.CharField(
+        max_length=20,
+        choices=_minimum_tier_choices,
+        default=_default_minimum_tier,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -158,6 +180,24 @@ def tier_requirement_definition(tier):
             "audit_mode": "strict",
         },
     )
+
+
+# Explicit assurance ordering for the scope-monotonicity check. Deliberately
+# written out rather than inferred from the tier label or from Tier's
+# declaration order — those are counterintuitive here: BASIC (Tier 1) is the
+# *highest*-assurance tier (RFID + biometric), ELEVATED (Tier 2) is next
+# (RFID + PIN), and HIGH (Tier 3) is the *lowest*-assurance, degraded tier
+# (RFID + PIN, restricted scope). Higher rank = higher assurance.
+TIER_ASSURANCE_RANK = {
+    AccessPolicy.Tier.HIGH: 0,
+    AccessPolicy.Tier.ELEVATED: 1,
+    AccessPolicy.Tier.BASIC: 2,
+}
+
+
+def tier_assurance_rank(tier):
+    normalized_tier = normalize_access_tier(tier)
+    return TIER_ASSURANCE_RANK.get(normalized_tier)
 
 
 class AuthenticationSession(models.Model):

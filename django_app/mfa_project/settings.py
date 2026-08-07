@@ -132,3 +132,15 @@ MFA_API_SHARED_SECRET = os.environ.get("MFA_API_SHARED_SECRET", "").strip()
 NODE_RED_BASE_URL = os.environ.get("NODE_RED_BASE_URL", "http://127.0.0.1:1880").rstrip("/")
 NODE_RED_TIMEOUT = float(os.environ.get("NODE_RED_TIMEOUT", "60"))
 NODE_RED_SHARED_SECRET = os.environ.get("NODE_RED_SHARED_SECRET", "").strip()
+
+# Test/measurement hooks for the tiered-access research paper. Both default to
+# True so normal behavior is unchanged unless a test explicitly overrides them.
+#
+# AUDIT_SINK_AVAILABLE: when False, create_audit_event() raises, simulating an
+# unreachable audit sink.
+#
+# SCOPE_MONOTONICITY_ENABLED: when True, denies access when the asserted tier's
+# assurance is below a resource's minimum_tier. Set False to reproduce the
+# pre-existing (unfixed) behavior for before/after paper comparisons.
+AUDIT_SINK_AVAILABLE = True
+SCOPE_MONOTONICITY_ENABLED = True

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -11,6 +12,7 @@ from .models import (
     Credential,
     ProtectedResource,
     normalize_access_tier,
+    tier_assurance_rank,
     tier_requirement_definition,
 )
 
@@ -26,6 +28,9 @@ def create_audit_event(
     severity=AuditEvent.Severity.INFO,
     details=None,
 ):
+    # Test/measurement hook for the paper: simulates an unreachable audit sink.
+    if not getattr(settings, "AUDIT_SINK_AVAILABLE", True):
+        raise RuntimeError("Audit sink is unavailable (AUDIT_SINK_AVAILABLE=False).")
     return AuditEvent.objects.create(
         event_type=event_type,
         message=message,
@@ -373,6 +378,21 @@ def _evaluate_authorization(session, authentication_result):
             "resource_allows_degraded_access": session.resource.allow_degraded_access,
             "message": "Authorization denied because authentication failed.",
         }
+
+    if getattr(settings, "SCOPE_MONOTONICITY_ENABLED", True):
+        asserted_rank = tier_assurance_rank(_selected_tier(session))
+        minimum_rank = tier_assurance_rank(session.resource.minimum_tier)
+        if asserted_rank is not None and minimum_rank is not None and asserted_rank < minimum_rank:
+            return {
+                "ok": False,
+                "degraded_access_required": requires_degraded_access,
+                "resource_allows_degraded_access": session.resource.allow_degraded_access,
+                "reason_code": "insufficient_tier_assurance",
+                "message": (
+                    "Selected tier does not meet the minimum assurance required for this "
+                    f"resource ({_tier_label(session.resource.minimum_tier)})."
+                ),
+            }
 
     if requires_degraded_access and not session.resource.allow_degraded_access:
         return {

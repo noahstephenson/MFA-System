@@ -1,11 +1,12 @@
 from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
-from ..models import AuditEvent, AuthenticationSession, Credential, ProtectedResource
+from ..models import AccessPolicy, AuditEvent, AuthenticationSession, Credential, ProtectedResource
 from ..services import (
     capture_enrollment_identifier,
+    create_audit_event,
     enroll_credential,
     run_node_red_access_attempt,
     start_authentication_session,
@@ -792,3 +793,165 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
                 user_id=self.user.id,
                 credential_type=Credential.CredentialType.PIN,
             )
+
+
+class ScopeMonotonicityAndAuditSinkTests(CoreTestDataMixin, TestCase):
+    """Covers ProtectedResource.minimum_tier / SCOPE_MONOTONICITY_ENABLED and
+    the AUDIT_SINK_AVAILABLE test hook used for the paper's before/after
+    measurements. See CLAUDE.md for the corrected tier-assurance ordering."""
+
+    def _factor_result(self, *, rfid_ok=True, fingerprint_ok=False):
+        return {
+            "ok": True,
+            "error": "",
+            "message": "",
+            "rfid": (
+                {"ok": True, "sensor": "rfid", "uid": self.rfid.identifier, "message": ""}
+                if rfid_ok
+                else {
+                    "ok": False,
+                    "sensor": "rfid",
+                    "error": "not_found",
+                    "message": "RFID factor was not accepted.",
+                }
+            ),
+            "fingerprint": (
+                {
+                    "ok": True,
+                    "sensor": "fingerprint",
+                    "matched": True,
+                    "finger_id": self.biometric.identifier,
+                    "confidence": 87,
+                    "message": "",
+                }
+                if fingerprint_ok
+                else {
+                    "ok": False,
+                    "sensor": "fingerprint",
+                    "matched": False,
+                    "error": "not_matched",
+                    "message": "Fingerprint not matched.",
+                }
+            ),
+            "raw": {},
+            "status_code": 200,
+        }
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_monotonicity_denies_weaker_tier_when_enabled(self, mock_collect):
+        resource = ProtectedResource.objects.create(
+            name="High Assurance Resource",
+            minimum_tier=AccessPolicy.Tier.BASIC,
+        )
+        AccessPolicy.objects.create(
+            resource=resource,
+            name="Tier 2 Policy",
+            tier=AccessPolicy.Tier.ELEVATED,
+            required_factor_count=2,
+        )
+        mock_collect.return_value = self._factor_result(rfid_ok=True, fingerprint_ok=False)
+
+        with override_settings(SCOPE_MONOTONICITY_ENABLED=True):
+            result = run_node_red_access_attempt(
+                resource_id=resource.id,
+                user_id=self.user.id,
+                tier=AccessPolicy.Tier.ELEVATED,
+                knowledge_factor=self.pin.identifier,
+            )
+
+        session = result["session"]
+        details = session.details or {}
+        self.assertTrue(details["authentication_result"]["ok"])
+        self.assertFalse(details["authorization_result"]["ok"])
+        self.assertEqual(details["authorization_result"]["reason_code"], "insufficient_tier_assurance")
+        self.assertFalse(session.is_access_granted)
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_monotonicity_disabled_matches_pre_existing_behavior(self, mock_collect):
+        resource = ProtectedResource.objects.create(
+            name="High Assurance Resource",
+            minimum_tier=AccessPolicy.Tier.BASIC,
+        )
+        AccessPolicy.objects.create(
+            resource=resource,
+            name="Tier 2 Policy",
+            tier=AccessPolicy.Tier.ELEVATED,
+            required_factor_count=2,
+        )
+        mock_collect.return_value = self._factor_result(rfid_ok=True, fingerprint_ok=False)
+
+        with override_settings(SCOPE_MONOTONICITY_ENABLED=False):
+            result = run_node_red_access_attempt(
+                resource_id=resource.id,
+                user_id=self.user.id,
+                tier=AccessPolicy.Tier.ELEVATED,
+                knowledge_factor=self.pin.identifier,
+            )
+
+        session = result["session"]
+        authorization_result = (session.details or {})["authorization_result"]
+        self.assertTrue(authorization_result["ok"])
+        self.assertNotIn("reason_code", authorization_result)
+        self.assertTrue(session.is_access_granted)
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_monotonicity_allows_matching_or_stronger_tier(self, mock_collect):
+        resource = ProtectedResource.objects.create(
+            name="High Assurance Resource",
+            minimum_tier=AccessPolicy.Tier.BASIC,
+        )
+        AccessPolicy.objects.create(
+            resource=resource,
+            name="Tier 1 Policy",
+            tier=AccessPolicy.Tier.BASIC,
+            required_factor_count=2,
+        )
+        mock_collect.return_value = self._factor_result(rfid_ok=True, fingerprint_ok=True)
+
+        with override_settings(SCOPE_MONOTONICITY_ENABLED=True):
+            result = run_node_red_access_attempt(
+                resource_id=resource.id,
+                user_id=self.user.id,
+                tier=AccessPolicy.Tier.BASIC,
+            )
+
+        session = result["session"]
+        self.assertTrue(session.is_access_granted)
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_monotonicity_does_not_affect_tier3_degraded_access_checks(self, mock_collect):
+        mock_collect.return_value = self._factor_result(rfid_ok=True, fingerprint_ok=False)
+
+        for monotonicity_enabled in (True, False):
+            with self.subTest(monotonicity_enabled=monotonicity_enabled), override_settings(
+                SCOPE_MONOTONICITY_ENABLED=monotonicity_enabled
+            ):
+                granted_result = run_node_red_access_attempt(
+                    resource_id=self.degraded_resource.id,
+                    user_id=self.user.id,
+                    tier=self.degraded_tier3_policy.tier,
+                    knowledge_factor=self.pin.identifier,
+                )
+                self.assertTrue(granted_result["session"].is_access_granted)
+
+                denied_result = run_node_red_access_attempt(
+                    resource_id=self.resource.id,
+                    user_id=self.user.id,
+                    tier=self.tier3_policy.tier,
+                    knowledge_factor=self.pin.identifier,
+                )
+                denied_session = denied_result["session"]
+                self.assertFalse(denied_session.is_access_granted)
+                self.assertEqual(
+                    (denied_session.details or {})["authorization_result"]["message"],
+                    "Selected resource is not approved for Tier 3 degraded access.",
+                )
+
+    def test_audit_sink_unavailable_raises(self):
+        with override_settings(AUDIT_SINK_AVAILABLE=False):
+            with self.assertRaises(RuntimeError):
+                create_audit_event("test_event", "test message")
+
+        # Sanity check: the sink works normally once available again (default).
+        create_audit_event("test_event", "test message")
+        self.assertEqual(AuditEvent.objects.filter(event_type="test_event").count(), 1)
