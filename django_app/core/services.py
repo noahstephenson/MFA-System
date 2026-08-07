@@ -487,9 +487,18 @@ def _finalize_session(session, factor_result, *, knowledge_factor="", request_pr
     )
 
     audit_mode = tier_requirement_definition(_selected_tier(session))["audit_mode"]
+    fail_closed_audit_enabled = getattr(settings, "FAIL_CLOSED_AUDIT_ENABLED", True)
 
     def _audit(event_type, message, **kwargs):
-        if audit_mode == "best_effort":
+        # factor_collection / authentication / authorization events are not
+        # individually accountability-critical -- only the access decision
+        # event (access_granted / access_denied, handled separately below) is.
+        # When fail-closed auditing is enabled, these are always best-effort
+        # regardless of tier, so an unreachable audit sink can never crash the
+        # request before the decision event's fail-closed handling runs. When
+        # disabled, fall back to exactly the historical per-tier behavior
+        # (best_effort for Tier 3, strict/raising for Tiers 1 and 2).
+        if fail_closed_audit_enabled or audit_mode == "best_effort":
             try:
                 create_audit_event(event_type, message, **kwargs)
             except Exception:
@@ -543,21 +552,75 @@ def _finalize_session(session, factor_result, *, knowledge_factor="", request_pr
         ),
     )
 
-    _audit(
-        "access_granted" if access_granted else "access_denied",
-        details["result_message"],
-        session=session,
-        user=session.user,
-        severity=AuditEvent.Severity.INFO if access_granted else AuditEvent.Severity.WARNING,
-        details=_merge_request_provenance(
-            {
-                "selected_tier": details["selected_tier"],
-                "resource_id": session.resource_id,
-                "policy_id": session.policy_id,
-            },
-            request_provenance,
-        ),
+    # The access decision event is accountability-critical: an APPROVED
+    # session must not stand unless this event was durably written. Unlike
+    # the events above, this one is never silently swallowed when fail-closed
+    # auditing is enabled -- a write failure instead flips an APPROVED
+    # decision to DENIED before returning.
+    access_event_details = _merge_request_provenance(
+        {
+            "selected_tier": details["selected_tier"],
+            "resource_id": session.resource_id,
+            "policy_id": session.policy_id,
+        },
+        request_provenance,
     )
+
+    if fail_closed_audit_enabled:
+        try:
+            create_audit_event(
+                "access_granted" if access_granted else "access_denied",
+                details["result_message"],
+                session=session,
+                user=session.user,
+                severity=AuditEvent.Severity.INFO if access_granted else AuditEvent.Severity.WARNING,
+                details=access_event_details,
+            )
+        except Exception:
+            if access_granted:
+                # Fail closed: the decision already persisted above as
+                # APPROVED, but it cannot stand without a durable audit
+                # record, so flip it to DENIED and persist that instead.
+                access_granted = False
+                audit_unavailable_message = (
+                    "Access denied: the access decision could not be durably "
+                    "audited (audit sink unavailable)."
+                )
+                details["result_message"] = audit_unavailable_message
+                details["audit_failure"] = {
+                    "reason_code": "audit_unavailable",
+                    "event_type": "access_granted",
+                    "message": audit_unavailable_message,
+                }
+                session.status = AuthenticationSession.Status.DENIED
+                session.decision = AuthenticationSession.Decision.REJECTED
+                session.details = details
+                session.save(update_fields=["status", "decision", "details", "updated_at"])
+                # Best-effort: the sink is already known to be unreachable, so
+                # this retry commonly fails too. Either way the denial above
+                # is what's durable, and this must not raise to the caller.
+                try:
+                    create_audit_event(
+                        "access_denied",
+                        audit_unavailable_message,
+                        session=session,
+                        user=session.user,
+                        severity=AuditEvent.Severity.WARNING,
+                        details={**access_event_details, "reason_code": "audit_unavailable"},
+                    )
+                except Exception:
+                    pass
+            # else: the session was already ending DENIED, so there is no
+            # unaudited APPROVED decision to close -- swallow and return.
+    else:
+        _audit(
+            "access_granted" if access_granted else "access_denied",
+            details["result_message"],
+            session=session,
+            user=session.user,
+            severity=AuditEvent.Severity.INFO if access_granted else AuditEvent.Severity.WARNING,
+            details=access_event_details,
+        )
 
     return session, details["result_message"]
 
@@ -799,21 +862,38 @@ def start_authentication_session(
         details=session_details,
     )
 
-    create_audit_event(
-        "session_started",
-        "Access request received. Authentication session started.",
-        session=session,
-        user=user,
-        details=_merge_request_provenance(
-            {
-                "selected_tier": selected_tier,
-                "resource_id": resource.id,
-                "policy_id": policy.id,
-                "resource_allows_degraded_access": resource.allow_degraded_access,
-            },
-            request_provenance,
-        ),
+    session_started_details = _merge_request_provenance(
+        {
+            "selected_tier": selected_tier,
+            "resource_id": resource.id,
+            "policy_id": policy.id,
+            "resource_allows_degraded_access": resource.allow_degraded_access,
+        },
+        request_provenance,
     )
+    if getattr(settings, "FAIL_CLOSED_AUDIT_ENABLED", True):
+        # session_started is not the access decision event (see
+        # _finalize_session) -- an unreachable audit sink should not prevent a
+        # session from starting at all, only stand in the way of an
+        # unaudited APPROVED decision later.
+        try:
+            create_audit_event(
+                "session_started",
+                "Access request received. Authentication session started.",
+                session=session,
+                user=user,
+                details=session_started_details,
+            )
+        except Exception:
+            pass
+    else:
+        create_audit_event(
+            "session_started",
+            "Access request received. Authentication session started.",
+            session=session,
+            user=user,
+            details=session_started_details,
+        )
     return session
 
 

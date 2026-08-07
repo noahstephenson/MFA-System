@@ -587,13 +587,20 @@ class MVPServiceTests(CoreTestDataMixin, TestCase):
         self.assertEqual(result["session"].details["access_mode"], "degraded")
 
     @patch("core.services.node_red_client.collect_factors")
-    def test_tier3_audit_failure_does_not_block_access(self, mock_collect):
+    def test_tier3_audit_failure_does_not_block_access_when_fail_closed_audit_disabled(self, mock_collect):
+        # FAIL_CLOSED_AUDIT_ENABLED=False reproduces today's (pre-fix)
+        # fail-open behavior: Tier 3's best_effort audit mode silently
+        # swallows the failure and the APPROVED decision stands unaudited.
+        # See ScopeMonotonicityAndAuditSinkTests for the fail-closed-enabled
+        # (default) behavior that closes this gap.
         mock_collect.return_value = self._node_red_result(
             rfid=self._rfid_ok(),
             fingerprint=self._fingerprint_fail(),
         )
 
-        with patch("core.services.create_audit_event") as mock_audit:
+        with override_settings(FAIL_CLOSED_AUDIT_ENABLED=False), patch(
+            "core.services.create_audit_event"
+        ) as mock_audit:
             mock_audit.side_effect = [
                 None,                            # session_started succeeds
                 Exception("audit unavailable"),  # factor_collection_completed
@@ -955,3 +962,50 @@ class ScopeMonotonicityAndAuditSinkTests(CoreTestDataMixin, TestCase):
         # Sanity check: the sink works normally once available again (default).
         create_audit_event("test_event", "test message")
         self.assertEqual(AuditEvent.objects.filter(event_type="test_event").count(), 1)
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_fail_closed_audit_denies_tier1_when_sink_unavailable(self, mock_collect):
+        # (a) An otherwise-valid Tier 1 attempt must not stand as APPROVED
+        # without a durable audit record of the access decision.
+        mock_collect.return_value = self._factor_result(rfid_ok=True, fingerprint_ok=True)
+
+        with override_settings(AUDIT_SINK_AVAILABLE=False, FAIL_CLOSED_AUDIT_ENABLED=True):
+            result = run_node_red_access_attempt(
+                resource_id=self.resource.id,
+                user_id=self.user.id,
+                tier=self.tier1_policy.tier,
+            )
+
+        session = result["session"]
+        self.assertFalse(session.is_access_granted)
+        self.assertEqual(session.status, AuthenticationSession.Status.DENIED)
+        self.assertEqual(session.decision, AuthenticationSession.Decision.REJECTED)
+        self.assertEqual(
+            (session.details or {})["audit_failure"]["reason_code"],
+            "audit_unavailable",
+        )
+
+    @patch("core.services.node_red_client.collect_factors")
+    def test_fail_closed_audit_denies_tier3_when_sink_unavailable(self, mock_collect):
+        # (b) Same as above for Tier 3, confirming the best_effort
+        # silent-swallow path is closed: this scenario would previously have
+        # ended APPROVED with no audit trail (see
+        # test_tier3_audit_failure_does_not_block_access_when_fail_closed_audit_disabled).
+        mock_collect.return_value = self._factor_result(rfid_ok=True, fingerprint_ok=False)
+
+        with override_settings(AUDIT_SINK_AVAILABLE=False, FAIL_CLOSED_AUDIT_ENABLED=True):
+            result = run_node_red_access_attempt(
+                resource_id=self.degraded_resource.id,
+                user_id=self.user.id,
+                tier=self.degraded_tier3_policy.tier,
+                knowledge_factor=self.pin.identifier,
+            )
+
+        session = result["session"]
+        self.assertFalse(session.is_access_granted)
+        self.assertEqual(session.status, AuthenticationSession.Status.DENIED)
+        self.assertEqual(session.decision, AuthenticationSession.Decision.REJECTED)
+        self.assertEqual(
+            (session.details or {})["audit_failure"]["reason_code"],
+            "audit_unavailable",
+        )

@@ -142,5 +142,12 @@ NODE_RED_SHARED_SECRET = os.environ.get("NODE_RED_SHARED_SECRET", "").strip()
 # SCOPE_MONOTONICITY_ENABLED: when True, denies access when the asserted tier's
 # assurance is below a resource's minimum_tier. Set False to reproduce the
 # pre-existing (unfixed) behavior for before/after paper comparisons.
+#
+# FAIL_CLOSED_AUDIT_ENABLED: when True, an access decision cannot stand as
+# APPROVED unless a durable local AuditEvent for that decision was written.
+# If that write fails, the session ends DENIED instead. Set False to
+# reproduce the pre-existing (unfixed, fail-open) behavior for before/after
+# paper comparisons.
 AUDIT_SINK_AVAILABLE = True
 SCOPE_MONOTONICITY_ENABLED = True
+FAIL_CLOSED_AUDIT_ENABLED = True
