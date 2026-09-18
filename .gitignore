@@ -11,6 +11,11 @@ __pycache__/
 # Django
 db.sqlite3
 
+# Document drafts: never commit. Use git add -f for a PDF you genuinely want tracked.
+*.pdf
+*.docx
+*.doc
+
 # Secrets / env
 .env
 
@@ -20,10 +25,13 @@ node_red/flows_cred.json
 # Raspberry Pi local artifacts
 MFA Project/minicom.log
 
-# Local reference/design files kept outside the tracked repo
-docs/local_reference/
-!docs/local_reference/
+# Local reference/design files kept outside the tracked repo, except the .mdzip files below,
+# which are exported Cameo/MagicDraw SysML model archives deliberately published from here.
 docs/local_reference/*
 !docs/local_reference/Tiered_MFA_MBSE_Definitive_Version_V3.mdzip
+!docs/local_reference/Tiered_MFA_MBSE_Definitive_Version_V4.mdzip
 desktop.ini
 .codex
+
+# Local Claude Code tooling state
+.claude/worktrees/
