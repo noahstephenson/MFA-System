@@ -11,10 +11,12 @@ __pycache__/
 # Django
 db.sqlite3
 
-# Document drafts: never commit. Use git add -f for a PDF you genuinely want tracked.
+# Document drafts stay local. The published paper and slides are tracked below.
 *.pdf
 *.docx
 *.doc
+!docs/MILCOM_MFA_Camera_Ready.pdf
+!docs/Stephenson_MILCOM2026_WS3.pdf
 
 # Secrets / env
 .env
